@@ -55,10 +55,43 @@ class Settings(BaseSettings):
     # per-window "sustained" time credit used by aed_min_support_s above.
 
     # --- Quality (SQUIM + clipdetect) ---
-    # Initial bands; the 3 sample calls are all labeled "clear" -> calibrate against them.
+    # Measured on the 3 labeled-clear calls (task-7-report.md), analyze_quality's
+    # middle-60s-window SQUIM pass:
+    #   call_001 (SNR 23.12dB, no noise):    pesq=2.1116 stoi=0.9188 clip=4.0e-6
+    #   call_002 (SNR  0.28dB, TV/medium):   pesq=1.6401 stoi=0.8257 clip=3.6e-6
+    #   call_003 (SNR 10.65dB, static/med):  pesq=2.0949 stoi=0.9644 clip=7.3e-7
+    # PESQ ranking exactly tracks the independent, non-ML SNR ranking from noise.py
+    # (23.12 > 10.65 > 0.28 dB) -> SQUIM's PESQ head is responding to background
+    # noise/SNR (which the client's protocol scores separately and explicitly
+    # excludes here), on top of its documented DNS-training telephony bias (brief).
+    # Clipping is ~1e-6 on all three (real signal, not distortion) -> all 3 real
+    # "clear" calls score below even the original pesq_slight=2.0.
+    #
+    # CONCERN FOR THE CONTROLLER (not fully resolved, see task-7-report.md): the
+    # verbatim unit test test_mid_pesq_is_slightly_impaired fixes pesq=2.4 ->
+    # slightly_impaired, which mathematically requires pesq_clear > 2.4. All 3 real
+    # measured PESQ values (2.11 max) are below 2.4, so NO legal pesq_clear can make
+    # any of them reach "clear" without breaking that verbatim test / make test.
+    # pesq_clear is therefore left at its original value: any legal value >2.4 is
+    # behaviorally IDENTICAL for these 3 calls (none clear the 2.4 floor), so moving
+    # it has zero measured benefit and no evidence picks one value over another.
+    # pesq_slight IS lowered (legal: stays <=2.4, so the unit test is unaffected;
+    # evidenced: call_002 at the old 2.0 fell to severely_impaired -- the harshest,
+    # clipping-override-strength bucket -- despite near-zero clipping and a clean
+    # "clear" label). 1.5 gives 0.14 measured margin below call_002, the worst
+    # anchor, reclassifying it to slightly_impaired: directionally correct, though
+    # still not "clear". tests/integration/test_quality_sample_calls.py therefore
+    # still fails all 3 assertions (documented; `make test` excludes -m slow, same
+    # non-blocking pattern as task 6's noise.py AED gap).
     pesq_clear: float = 3.0
-    pesq_slight: float = 2.0
+    pesq_slight: float = 1.5  # was 2.0 -- see measured evidence + concern above
+    # stoi_floor UNCHANGED: measured STOI (0.8257-0.9644) clears 0.75 with real
+    # margin (min 0.076, ~10%) on all 3 calls -- no under-scoring evidence, unlike
+    # PESQ, so no calibration case exists.
     stoi_floor: float = 0.75          # below this, degrade one level
+    # clipping_ratio_max UNCHANGED: measured ratios are ~1e-6 on all 3 calls (real
+    # clipdetect API: total_clipped_samples / total_samples, see quality.py) --
+    # 4-5 orders of magnitude below 0.02, no override risk, no calibration case.
     clipping_ratio_max: float = 0.02  # >2% clipped frames -> severely_impaired override
 
     # --- Dimensional tone mapping (audeering A/V/D in [0,1]) ---

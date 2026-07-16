@@ -11,7 +11,16 @@ dependencies = [
     "torchaudio>=2.2",
     "silero-vad>=5.1",
     "panns-inference>=0.1.1",
-    "transformers>=4.44",
+    # Pinned <5: transformers 5.x rewrote model-loading internals
+    # (_finalize_model_loading requires all_tied_weights_keys) and breaks the
+    # audeering EmotionModel custom Wav2Vec2PreTrainedModel subclass used by
+    # analyzers/tone/dimensional.py (task 8). The original >=4.44 floor also
+    # loads without error but silently fails to restore the Wav2Vec2 encoder's
+    # pos_conv_embed weight-norm parameters against torch>=2.2 (they're left
+    # randomly initialized -- corrupting the audio encoder with no visible
+    # error). >=4.46 is the first 4.x line observed to restore those weights
+    # correctly; verified against 4.57.6.
+    "transformers>=4.46,<5",
     "faster-whisper>=1.0",
     "google-genai>=1.0",
     "openai>=1.40",
@@ -44,3 +53,10 @@ src = ["src", "tests", "eval"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# gemini_tone.py's build_prompt is one long natural-language instruction string;
+# several lines are >100 chars in the brief's own verbatim prompt text, and
+# splitting sentences mid-line to satisfy the linter would hurt prompt
+# readability/maintainability for no behavioral benefit.
+"src/autoace_audio/analyzers/tone/gemini_tone.py" = ["E501"]

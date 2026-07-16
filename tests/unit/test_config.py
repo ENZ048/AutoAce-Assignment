@@ -1,3 +1,5 @@
+import pytest
+
 from autoace_audio.config import Settings
 
 
@@ -17,3 +19,10 @@ def test_env_override(monkeypatch):
     monkeypatch.setenv("LONG_SILENCE_S", "12.5")
     s = Settings(_env_file=None)
     assert s.long_silence_s == 12.5
+
+
+def test_fusion_confidence_blend_weights_sum_to_one(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    s = Settings(_env_file=None)
+    total = s.conf_w_tone + s.conf_w_noise + s.conf_w_quality
+    assert total == pytest.approx(1.0)

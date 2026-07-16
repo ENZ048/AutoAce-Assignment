@@ -95,6 +95,18 @@ class NoiseResult:
     severity: Severity
     snr_db: float | None
     top_events: list[tuple[str, float]]
+    # Task 9 fusion needs to tell a comfortably-sustained AED read from a barely-
+    # sustained one (to know when the audio-LLM's noise_opinion should be allowed to
+    # override AED's type_label — see fusion.py's thin-margin rule). Recomputing the
+    # windowing/support-crediting internals in fusion.py would duplicate this
+    # module's logic, so the two raw numbers behind the "sustained" decision are
+    # exposed directly instead: the winning class's actual support seconds, and the
+    # effective floor it had to clear (see analyze_noise's effective_floor calc —
+    # this is `min(aed_min_support_s, total_weight)`, not always the raw config
+    # value, since short clips cannot physically offer aed_min_support_s of
+    # independently-spaced evidence). Both default to 0.0 (present=False -> unused).
+    support_s: float = 0.0
+    support_floor_s: float = 0.0
 
 
 def _rms(x: np.ndarray) -> float:
@@ -231,19 +243,22 @@ def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
     # being able to report presence at all.
     effective_floor = min(s.aed_min_support_s, total_weight)
     mean_prob: dict[str, float] = {}
-    support_s: dict[str, float] = {}
+    class_support_s: dict[str, float] = {}
     for i, name in enumerate(names):
         if name in MASKED_CLASSES:
             continue
         col = clipwise[:, i]
         weighted = list(zip(col, weights, strict=True))
         mean_prob[name] = float(sum(p * w for p, w in weighted) / total_weight)
-        support_s[name] = float(sum(w for p, w in weighted if p >= s.aed_prob_threshold))
+        class_support_s[name] = float(sum(w for p, w in weighted if p >= s.aed_prob_threshold))
 
     top = sorted(mean_prob.items(), key=lambda t: t[1], reverse=True)[:5]
-    sustained = [(name, p) for name, p in mean_prob.items() if support_s[name] >= effective_floor]
+    sustained = [
+        (name, p) for name, p in mean_prob.items() if class_support_s[name] >= effective_floor
+    ]
     present = bool(sustained)
-    type_label = concise_label(max(sustained, key=lambda t: t[1])[0]) if present else ""
+    winning_class = max(sustained, key=lambda t: t[1])[0] if present else None
+    type_label = concise_label(winning_class) if present else ""
 
     snr = snr_db(samples, sr, vad)
     return NoiseResult(
@@ -252,4 +267,6 @@ def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
         severity=severity_from_snr(snr, present),
         snr_db=snr,
         top_events=top,
+        support_s=class_support_s[winning_class] if present else 0.0,
+        support_floor_s=effective_floor,
     )

@@ -175,6 +175,42 @@ class Settings(BaseSettings):
     confidence_ceiling: float = 0.98
     tone_degraded_confidence_cap: float = 0.40
 
+    # Weighted blend of the 3 sub-signals fusion.py has an opinion about (tone arm's
+    # own confidence, an AED-margin proxy, and quality's measurement completeness).
+    # Tone dominates (0.55) since it's the field with a real per-arm confidence
+    # estimate behind it; noise and quality contribute secondary, mostly-diagnostic
+    # signal (0.25/0.20). Uncalibrated initial guess (task-9-brief's pseudocode) —
+    # no labeled confidence ground truth exists yet; revisit in eval/. Must sum to
+    # 1.0 (asserted in test_config.py).
+    conf_w_tone: float = 0.55
+    conf_w_noise: float = 0.25
+    conf_w_quality: float = 0.20
+
+    # Used only when NO tone arm produced a result at all (both the primary arm and
+    # its local fallback raised) — distinct from tone_degraded_confidence_cap above,
+    # which caps a *successful* fallback's confidence. This is the "we have nothing,
+    # emotional_tone is a pure placeholder" floor. Uncalibrated initial guess.
+    tone_missing_confidence: float = 0.2
+
+    # Noise-margin-to-confidence transform: `top_events`'s top class probability
+    # isn't itself a confidence, but distance from aed_prob_threshold is a rough
+    # proxy for "how clearly did AED separate signal from ambiguity" — a probability
+    # right at the threshold is the most ambiguous case (contributes only the base),
+    # while a probability far from it (either direction) contributes more. The base
+    # keeps a threshold-boundary read from zeroing out fusion confidence entirely
+    # (some evidence exists even at the boundary); the ceiling (1.0) is a plain
+    # probability bound, not a calibrated guess, so it isn't a config knob.
+    # Uncalibrated initial guess (task-9-brief's pseudocode).
+    noise_margin_confidence_base: float = 0.5
+
+    # Quality's contribution to the confidence blend: 0.9 when PESQ actually got
+    # measured (SQUIM ran successfully -- a real secondary quality signal exists),
+    # 0.5 when it didn't (deterministic channel evidence alone still drove
+    # audio_quality, but fusion has one fewer corroborating measurement). Uncalibrated
+    # initial guess (task-9-brief's pseudocode).
+    quality_confidence_measured: float = 0.9
+    quality_confidence_unmeasured: float = 0.5
+
 
 @lru_cache
 def get_settings() -> Settings:

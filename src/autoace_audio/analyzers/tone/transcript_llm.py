@@ -64,11 +64,21 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap) -> ToneResult:
         ],
     )
     data = json.loads(resp.choices[0].message.content)
+    usage = getattr(resp, "usage", None)
     return ToneResult(
         tone=EmotionalTone(data["emotional_tone"]),
         intensity=EmotionalIntensity(data["emotional_intensity"]),
         confidence=float(
             np.clip(data.get("tone_confidence", s.transcript_default_confidence), 0, 1)
         ),
-        raw={"transcript": text[:_TRANSCRIPT_RAW_CHARS], "response": data},
+        raw={
+            "transcript": text[:_TRANSCRIPT_RAW_CHARS],
+            "response": data,
+            # Mirrors gemini_tone.py's prompt_tokens/output_tokens pattern so the
+            # bake-off (eval/bakeoff.py) can report a real, metered $ cost for the
+            # OpenAI text call rather than a length-based guess. Whisper transcription
+            # itself is local compute with no metered API cost.
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+        },
     )

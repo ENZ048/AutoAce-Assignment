@@ -36,3 +36,21 @@ def test_opus_reencode_produces_ogg(make_wav):
     blob = encode_opus_ogg(a.samples, a.sr)
     assert blob[:4] == b"OggS"
     assert len(blob) < 40_000  # 24kbps mono: tiny
+
+
+def test_zero_byte_file_raises_decode_error(tmp_path):
+    empty = tmp_path / "empty.wav"
+    empty.write_bytes(b"")
+    with pytest.raises(DecodeError):
+        load_audio(empty)
+
+
+def test_subprocess_timeout_surfaces_as_decode_error(make_wav, monkeypatch):
+    import subprocess as sp
+
+    def fake_run(*args, **kwargs):
+        raise sp.TimeoutExpired(cmd="ffprobe", timeout=1)
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    with pytest.raises(DecodeError, match="timed out"):
+        load_audio(make_wav([("tone", 0.5)]))

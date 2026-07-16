@@ -15,6 +15,16 @@ class DecodeError(Exception):
     pass
 
 
+def _run(
+    cmd: list[str], *, input_: bytes | None = None, timeout: float
+) -> subprocess.CompletedProcess:
+    """Wrapper to ensure subprocess timeouts surface as DecodeError."""
+    try:
+        return subprocess.run(cmd, input=input_, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise DecodeError(f"{cmd[0]} timed out after {timeout:.0f}s") from e
+
+
 @dataclass(frozen=True)
 class DecodedAudio:
     samples: np.ndarray  # float32 mono @ 16 kHz
@@ -31,7 +41,7 @@ def _probe(path: Path) -> dict:
         "-show_entries", "stream=codec_name,sample_rate,channels",
         "-of", "json", str(path),
     ]
-    proc = subprocess.run(cmd, capture_output=True, timeout=60)
+    proc = _run(cmd, timeout=60)
     if proc.returncode != 0:
         raise DecodeError(f"ffprobe failed: {proc.stderr.decode(errors='replace')[:200]}")
     streams = json.loads(proc.stdout or b"{}").get("streams") or []
@@ -49,7 +59,7 @@ def load_audio(path: Path) -> DecodedAudio:
         "ffmpeg", "-v", "error", "-i", str(path),
         "-ac", "1", "-ar", str(TARGET_SR), "-f", "f32le", "-acodec", "pcm_f32le", "pipe:1",
     ]
-    proc = subprocess.run(cmd, capture_output=True, timeout=300)
+    proc = _run(cmd, timeout=300)
     if proc.returncode != 0 or not proc.stdout:
         raise DecodeError(f"ffmpeg decode failed: {proc.stderr.decode(errors='replace')[:200]}")
     samples = np.frombuffer(proc.stdout, dtype=np.float32).copy()
@@ -71,8 +81,7 @@ def encode_opus_ogg(samples: np.ndarray, sr: int, bitrate: str = "24k") -> bytes
         "ffmpeg", "-v", "error", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0",
         "-c:a", "libopus", "-b:a", bitrate, "-f", "ogg", "pipe:1",
     ]
-    proc = subprocess.run(cmd, input=samples.astype(np.float32).tobytes(),
-                          capture_output=True, timeout=300)
+    proc = _run(cmd, input_=samples.astype(np.float32).tobytes(), timeout=300)
     if proc.returncode != 0 or not proc.stdout:
         raise DecodeError(f"opus encode failed: {proc.stderr.decode(errors='replace')[:200]}")
     return proc.stdout

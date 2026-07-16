@@ -155,11 +155,13 @@ def _spectral_rolloff(samples: np.ndarray, sr: int, vad: VadMap) -> float | None
     frequency below which 95% of that frame's spectral energy sits — the standard
     MIR "spectral rolloff" feature). Frame values are weighted by their own energy
     when combined into one call-level number, so near-silent dips inside a speech
-    segment (stop consonants, brief pauses) don't skew the estimate. Telephony
-    wideband speech should sit well above 2.2kHz; muffled/band-limited audio falls
-    below (see rolloff_severe_hz/rolloff_slight_hz in config.py). None if there are
-    no full 32ms speech frames to measure (no speech at all, or every speech segment
-    is shorter than one frame)."""
+    segment (stop consonants, brief pauses) don't skew the estimate. Real telephony
+    speech on the 3 labeled-clear anchors measured 1024-1591Hz (task 7 calibration),
+    well below a naive "wideband" expectation of 2.2kHz+ -- rolloff_severe_hz/
+    rolloff_slight_hz in config.py are retuned to 600/900Hz to match that measured
+    reality rather than an assumed wideband floor. None if there are no full 32ms
+    speech frames to measure (no speech at all, or every speech segment is shorter
+    than one frame)."""
     frame_n = int(round(0.032 * sr))
     hop_n = int(round(0.016 * sr))
     window = np.hanning(frame_n)

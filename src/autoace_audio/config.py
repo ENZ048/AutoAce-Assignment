@@ -30,8 +30,29 @@ class Settings(BaseSettings):
     snr_medium_db: float = 5.0  # (medium..low]: occasionally interferes; <= : high
 
     # --- AED (PANNs CNN14) ---
-    aed_prob_threshold: float = 0.35  # per user's converging research doc
-    aed_min_support_s: float = 2.0    # sustained evidence, not a blip
+    # Windowed full-clip AED (see analyzers/noise.py + task-6-report.md): CNN14 scores
+    # a sliding window every aed_hop_s seconds; a class only counts as present if it's
+    # sustained across enough hop-weighted window time, not a one-window spike.
+    # Measured sweep {0.35, 0.30, 0.275, 0.25, 0.225, 0.20} against the 3 labeled
+    # anchors (task-6-report.md): call_001 (no-noise) never sustains any class at any
+    # threshold down to the 0.20 floor (peak mean 0.055 "Animal", support 0.0s
+    # throughout); call_002 (TV, medium) already sustains "Radio" at the original
+    # 0.35 (mean 0.229 across all windows, 4 of 13 windows individually clear 0.35,
+    # support 10.0s >> the 5.0s floor). Per the controller's rule ("start at 0.35; if
+    # call_002 misses, lower toward the widest margin, floor 0.20") — it doesn't
+    # miss, so kept at 0.35 rather than lowering with no measured need.
+    aed_prob_threshold: float = 0.35
+    aed_min_support_s: float = 5.0  # >=2 activated windows at aed_hop_s=2.5s; kills
+    # single-window CNN spikes on short/out-of-distribution fragments (measured on the
+    # old per-gap-segment diagnostic: call_003 fragments spiked "Clip-clop" 0.41 /
+    # "Horse" 0.39 / "Run" 0.32 on <1.5s slices — a single window must not be enough
+    # on its own; see task-6-report.md).
+    aed_window_s: float = 5.0  # CNN14 is trained on ~10s AudioSet clips; 5s balances
+    # enough spectral context per window against localizing which part of a long call
+    # actually carries the noise (call_003 runs 172s — one clip-wide read would blur
+    # a short noise burst into silence).
+    aed_hop_s: float = 2.5  # 50% overlap between consecutive windows; also the
+    # per-window "sustained" time credit used by aed_min_support_s above.
 
     # --- Quality (SQUIM + clipdetect) ---
     # Initial bands; the 3 sample calls are all labeled "clear" -> calibrate against them.

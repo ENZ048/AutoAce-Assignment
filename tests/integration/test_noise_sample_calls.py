@@ -13,3 +13,22 @@ def test_call_002_has_noise_call_001_does_not(sample_calls_dir):
     n2 = analyze_noise(a2.samples, a2.sr, analyze_vad(a2.samples, a2.sr))
     assert not n1.present, f"001 labeled no-noise; got {n1.top_events[:3]}"
     assert n2.present, f"002 labeled TV/medium; got {n2.top_events[:3]}"
+
+
+@pytest.mark.slow
+@pytest.mark.xfail(
+    reason="CNN14 lacks a static/crackle response for this noise; pipeline covers it "
+    "via the audio-LLM noise opinion in fusion",
+    strict=False,
+)
+def test_call_003_static_detected(sample_calls_dir):
+    """call_003 is labeled "sharp static"/medium. present + severity happen to match
+    the label (via a sustained "Radio" read, not a static-family class — see
+    task-6-report.md), so this checks the meaningful outcome (a static-family
+    type_label) rather than the presence bit alone, which would pass for the wrong
+    reason."""
+    a3 = load_audio(sample_calls_dir / "call_003.ogg")
+    n3 = analyze_noise(a3.samples, a3.sr, analyze_vad(a3.samples, a3.sr))
+    assert n3.present and n3.type_label == "static", (
+        f"003 labeled sharp static/medium; got {n3.top_events[:3]}"
+    )

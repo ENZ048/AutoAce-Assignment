@@ -1,6 +1,17 @@
-"""Background noise: WHAT (PANNs CNN14 AED, speech classes masked, on non-speech
-segments) and HOW MUCH (SNR of speech vs non-speech RMS). Never inferred from
-technical quality — the brief scores those independently."""
+"""Background noise: WHAT (PANNs CNN14 AED, sliding windows over the FULL clip,
+speech classes masked, sustained-support pooled across windows) and HOW MUCH (SNR of
+speech vs non-speech RMS, VAD-segmented, unchanged). Never inferred from technical
+quality — the brief scores those independently.
+
+AED source was originally "concatenated non-speech gaps only" (see task-6-report.md
+git history). Measured on the labeled calls, that under-detected continuous
+background noise that bleeds through WHILE the customer is speaking (e.g. a TV in the
+next room): the true signal was often far stronger in speech-concurrent audio than in
+the scattered, short non-speech gaps, and no single probability threshold could
+separate the no-noise anchor from the noise anchor under that architecture. This
+windowed-full-clip + sustained-support design replaces it — see task-6-report.md for
+the measured evidence and the controller's decision.
+"""
 
 from dataclasses import dataclass
 
@@ -18,10 +29,10 @@ MASKED_CLASSES = {
     "Breathing", "Sigh", "Gasp", "Cough", "Sneeze", "Silence", "Inside, small room",
     "Inside, large room or hall", "Telephone", "Telephone bell ringing",
     "Telephone dialing, DTMF", "Dial tone",
-    # Call-channel/line artifacts, not caller-environment noise (found via call_002
-    # integration diagnostics: "Sidetone" and "Busy signal" outranked the true TV/music
-    # signal in the non-speech gaps of a labeled-TV-noise call) — same category as the
-    # Telephone/Dial tone entries above, not the client's "background noise" concept.
+    # Call-channel/line artifacts, not caller-environment noise (found via call_002/
+    # call_003 diagnostics: "Sidetone" and "Busy signal" outranked the true noise
+    # signal) — same category as the Telephone/Dial tone entries above, not the
+    # client's "background noise" concept.
     "Sidetone", "Busy signal",
 }
 
@@ -123,27 +134,74 @@ def _audioset_labels() -> list[str]:
     return list(labels)
 
 
+def _window_starts(total_n: int, window_n: int, hop_n: int) -> list[int]:
+    """Sample-domain window start offsets: window_n-length windows every hop_n
+    samples, plus a final window anchored on the tail so trailing audio is never
+    left unscored. A clip no longer than one window yields a single start=0 — the
+    caller slices the whole (shorter-than-window) clip as one window."""
+    if total_n <= window_n:
+        return [0]
+    starts = list(range(0, total_n - window_n + 1, hop_n))
+    last_start = total_n - window_n
+    if starts[-1] != last_start:
+        starts.append(last_start)
+    return starts
+
+
 def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
+    """AED runs on sliding windows over the FULL clip. A class is "sustained" (and
+    only then counts toward presence) if the windows where it scores >=
+    aed_prob_threshold cover >= aed_min_support_s of hop-weighted time — each
+    activated window credits aed_hop_s of support (total clip length, for the
+    short-clip single-window fallback). This requires multiple consecutive
+    activations, not one spike, which is what filters out CNN14's overconfident-but-
+    wrong single-window reads on short/out-of-distribution audio. top_events reports
+    the duration-weighted mean probability per class across ALL windows (whether
+    sustained or not) so near-misses stay visible for diagnostics.
+    """
     import torch
     import torchaudio.functional as F
 
     s = get_settings()
-    gap_audio = _slice(samples, sr, vad.gaps)
-    source = gap_audio if gap_audio.size >= int(s.aed_min_support_s * sr) else samples
-    audio32 = F.resample(torch.from_numpy(source), sr, 32000).numpy()[None, :]
-    clipwise, _ = _tagger().inference(audio32)
-    probs = clipwise[0]
+    total_s = samples.size / sr
+    window_n = max(1, int(round(s.aed_window_s * sr)))
+    hop_n = max(1, int(round(s.aed_hop_s * sr)))
+    starts = _window_starts(samples.size, window_n, hop_n)
+    single_fallback = len(starts) == 1 and samples.size < window_n
+
+    if single_fallback:
+        clips16k = samples[np.newaxis, :]
+        weights = [total_s]
+    else:
+        clips16k = np.stack([samples[st : st + window_n] for st in starts])
+        weights = [s.aed_hop_s] * len(starts)
+
+    clips32k = F.resample(torch.from_numpy(clips16k), sr, 32000).numpy()
+    clipwise, _ = _tagger().inference(clips32k)  # (n_windows, n_classes)
+
     names = _audioset_labels()
-    ranked = sorted(
-        ((names[i], float(p)) for i, p in enumerate(probs) if names[i] not in MASKED_CLASSES),
-        key=lambda t: t[1], reverse=True,
-    )
-    top = ranked[:5]
-    present = bool(top and top[0][1] >= s.aed_prob_threshold)
+    total_weight = sum(weights)
+    mean_prob: dict[str, float] = {}
+    support_s: dict[str, float] = {}
+    for i, name in enumerate(names):
+        if name in MASKED_CLASSES:
+            continue
+        col = clipwise[:, i]
+        weighted = list(zip(col, weights, strict=True))
+        mean_prob[name] = float(sum(p * w for p, w in weighted) / total_weight)
+        support_s[name] = float(sum(w for p, w in weighted if p >= s.aed_prob_threshold))
+
+    top = sorted(mean_prob.items(), key=lambda t: t[1], reverse=True)[:5]
+    sustained = [
+        (name, p) for name, p in mean_prob.items() if support_s[name] >= s.aed_min_support_s
+    ]
+    present = bool(sustained)
+    type_label = concise_label(max(sustained, key=lambda t: t[1])[0]) if present else ""
+
     snr = snr_db(samples, sr, vad)
     return NoiseResult(
         present=present,
-        type_label=concise_label(top[0][0]) if present else "",
+        type_label=type_label,
         severity=severity_from_snr(snr, present),
         snr_db=snr,
         top_events=top,

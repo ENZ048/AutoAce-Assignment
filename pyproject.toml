@@ -1,0 +1,46 @@
+[project]
+name = "autoace-audio"
+version = "0.1.0"
+description = "AutoAce technical trial: emotional tone + background noise analysis for production call audio"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    "silero-vad>=5.1",
+    "panns-inference>=0.1.1",
+    "transformers>=4.44",
+    "faster-whisper>=1.0",
+    "google-genai>=1.0",
+    "openai>=1.40",
+    "clipdetect>=0.1.4",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-timeout>=2.3", "ruff>=0.5"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "slow: needs local model download/inference",
+    "network: needs API keys / internet",
+]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "eval"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -1,7 +1,7 @@
 """Merge analyzer outputs into the final AnalysisResult; enforce invariants;
 compute calibrated confidence. All cross-field rules live HERE, nowhere else."""
 
-from autoace_audio.analyzers.noise import NoiseResult, severity_from_snr
+from autoace_audio.analyzers.noise import NoiseResult, concise_label, severity_from_snr
 from autoace_audio.analyzers.quality import QualityResult
 from autoace_audio.analyzers.tone.base import ToneResult
 from autoace_audio.analyzers.vad import VadMap
@@ -37,8 +37,12 @@ def fuse(
         # guess as a last resort); severity is re-derived from SNR now that we
         # believe noise is present at all.
         present = True
+        # Last-resort fallback (LLM said present but gave no type of its own):
+        # AED's own best unsustained guess, run through the same concise_label()
+        # formatting contract analyze_noise itself uses for type_label (raw
+        # AudioSet class names like "Television" must not leak past fusion).
         type_label = llm_type or (
-            noise.top_events[0][0] if noise.top_events else "background noise"
+            concise_label(noise.top_events[0][0]) if noise.top_events else "background noise"
         )
         severity = severity_from_snr(noise.snr_db, present=True)
     elif present and llm_present and llm_type and llm_type.lower() != type_label.strip().lower():

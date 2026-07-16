@@ -96,6 +96,18 @@ def test_gemini_noise_opinion_fills_type_when_aed_uncertain():
     assert r.background_noise_severity == Severity.MEDIUM  # severity re-derived from SNR 13dB
 
 
+def test_gemini_present_with_no_type_falls_back_to_concise_labeled_aed_top_event():
+    """Rule A's last-resort branch: the LLM says noise IS present but gives no type
+    of its own (empty string) -- fall back to AED's own best (unsustained) guess,
+    but it must go through concise_label() same as analyze_noise's own type_label
+    does, not leak a raw AudioSet class name like "Television" past fusion."""
+    n = NoiseResult(False, "", Severity.NONE, 13.0, [("Television", 0.30)])
+    t = _tone(noise_type="")  # gemini agrees present, but has no type opinion
+    r = fuse(_vad(), n, _quality(), t, None)
+    assert r.background_noise_present
+    assert r.background_noise_type == "TV"  # concise_label("Television"), not raw
+
+
 # --- Controller amendment B: thin-margin AED support + LLM type disagreement ---
 # CNN14 has no static-family AudioSet class; call_003's real "sharp static" comes
 # out "radio" from AED (see task-6-report.md / test_noise_sample_calls.py's
@@ -127,8 +139,10 @@ def test_comfortable_margin_keeps_aed_type_despite_disagreement():
 def test_matching_type_opinion_is_a_no_op():
     """When the LLM agrees with AED on the type string, the thin-margin rule has
     nothing to decide -- output is simply the (matching) AED type, regardless of
-    margin width."""
+    margin width, and neither presence nor severity are disturbed."""
     n = _noise(present=True, type_label="TV", support_s=5.0, support_floor_s=5.0)
     t = _tone(noise_type="TV")
     r = fuse(_vad(), n, _quality(), t, None)
+    assert r.background_noise_present is True
     assert r.background_noise_type == "TV"
+    assert r.background_noise_severity == Severity.MEDIUM

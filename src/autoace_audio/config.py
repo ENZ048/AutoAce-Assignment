@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     vad_min_silence_ms: int = 300
 
     # --- Noise severity via SNR (speech RMS vs non-speech RMS, dB) ---
-    snr_none_db: float = 20.0   # > this: no meaningful interference
-    snr_low_db: float = 15.0    # (low..none]: audible, doesn't interfere
+    snr_none_db: float = 20.0  # > this: no meaningful interference
+    snr_low_db: float = 15.0  # (low..none]: audible, doesn't interfere
     snr_medium_db: float = 5.0  # (medium..low]: occasionally interferes; <= : high
 
     # --- AED (PANNs CNN14) ---

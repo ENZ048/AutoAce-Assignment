@@ -13,8 +13,14 @@ from autoace_audio.schema import Severity
 
 
 def _vad(speech, gaps, total):
-    return VadMap(speech=speech, gaps=gaps, speech_ratio=0.5, max_gap_s=0.0,
-                  long_silence_present=False, total_s=total)
+    return VadMap(
+        speech=speech,
+        gaps=gaps,
+        speech_ratio=0.5,
+        max_gap_s=0.0,
+        long_silence_present=False,
+        total_s=total,
+    )
 
 
 def test_snr_loud_speech_quiet_gap_is_high_db():

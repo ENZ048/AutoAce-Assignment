@@ -25,9 +25,15 @@ def _valid(**over):
 def test_field_order_matches_brief_example():
     keys = list(json.loads(_valid().to_result_json()).keys())
     assert keys == [
-        "emotional_tone", "emotional_intensity", "background_noise_present",
-        "background_noise_type", "background_noise_severity", "audio_quality",
-        "speaker_overlap_present", "long_silence_present", "confidence",
+        "emotional_tone",
+        "emotional_intensity",
+        "background_noise_present",
+        "background_noise_type",
+        "background_noise_severity",
+        "audio_quality",
+        "speaker_overlap_present",
+        "long_silence_present",
+        "confidence",
     ]
 
 

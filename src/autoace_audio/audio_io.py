@@ -37,9 +37,16 @@ class DecodedAudio:
 
 def _probe(path: Path) -> dict:
     cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "a:0",
-        "-show_entries", "stream=codec_name,sample_rate,channels",
-        "-of", "json", str(path),
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=codec_name,sample_rate,channels",
+        "-of",
+        "json",
+        str(path),
     ]
     proc = _run(cmd, timeout=60)
     if proc.returncode != 0:
@@ -56,8 +63,20 @@ def load_audio(path: Path) -> DecodedAudio:
         raise DecodeError(f"file not found: {path}")
     info = _probe(path)
     cmd = [
-        "ffmpeg", "-v", "error", "-i", str(path),
-        "-ac", "1", "-ar", str(TARGET_SR), "-f", "f32le", "-acodec", "pcm_f32le", "pipe:1",
+        "ffmpeg",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-ac",
+        "1",
+        "-ar",
+        str(TARGET_SR),
+        "-f",
+        "f32le",
+        "-acodec",
+        "pcm_f32le",
+        "pipe:1",
     ]
     proc = _run(cmd, timeout=300)
     if proc.returncode != 0 or not proc.stdout:
@@ -78,8 +97,24 @@ def load_audio(path: Path) -> DecodedAudio:
 def encode_opus_ogg(samples: np.ndarray, sr: int, bitrate: str = "24k") -> bytes:
     """Compact upload payload for the Gemini API (billing is per-second, not per-byte)."""
     cmd = [
-        "ffmpeg", "-v", "error", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0",
-        "-c:a", "libopus", "-b:a", bitrate, "-f", "ogg", "pipe:1",
+        "ffmpeg",
+        "-v",
+        "error",
+        "-f",
+        "f32le",
+        "-ar",
+        str(sr),
+        "-ac",
+        "1",
+        "-i",
+        "pipe:0",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        bitrate,
+        "-f",
+        "ogg",
+        "pipe:1",
     ]
     proc = _run(cmd, input_=samples.astype(np.float32).tobytes(), timeout=300)
     if proc.returncode != 0 or not proc.stdout:

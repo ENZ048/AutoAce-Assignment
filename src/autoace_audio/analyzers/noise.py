@@ -23,17 +23,35 @@ from autoace_audio.schema import Severity
 
 # AudioSet classes that describe the conversation itself — never background noise.
 MASKED_CLASSES = {
-    "Speech", "Male speech, man speaking", "Female speech, woman speaking",
-    "Child speech, kid speaking", "Conversation", "Narration, monologue",
-    "Speech synthesizer", "Shout", "Yell", "Whispering", "Throat clearing",
-    "Breathing", "Sigh", "Gasp", "Cough", "Sneeze", "Silence", "Inside, small room",
-    "Inside, large room or hall", "Telephone", "Telephone bell ringing",
-    "Telephone dialing, DTMF", "Dial tone",
+    "Speech",
+    "Male speech, man speaking",
+    "Female speech, woman speaking",
+    "Child speech, kid speaking",
+    "Conversation",
+    "Narration, monologue",
+    "Speech synthesizer",
+    "Shout",
+    "Yell",
+    "Whispering",
+    "Throat clearing",
+    "Breathing",
+    "Sigh",
+    "Gasp",
+    "Cough",
+    "Sneeze",
+    "Silence",
+    "Inside, small room",
+    "Inside, large room or hall",
+    "Telephone",
+    "Telephone bell ringing",
+    "Telephone dialing, DTMF",
+    "Dial tone",
     # Call-channel/line artifacts, not caller-environment noise (found via call_002/
     # call_003 diagnostics: "Sidetone" and "Busy signal" outranked the true noise
     # signal) — same category as the Telephone/Dial tone entries above, not the
     # client's "background noise" concept.
-    "Sidetone", "Busy signal",
+    "Sidetone",
+    "Busy signal",
 }
 
 # AudioSet label -> concise human label per the brief's examples.
@@ -84,7 +102,7 @@ def _rms(x: np.ndarray) -> float:
 
 
 def _slice(samples: np.ndarray, sr: int, segments) -> np.ndarray:
-    parts = [samples[int(s.start * sr): int(s.end * sr)] for s in segments]
+    parts = [samples[int(s.start * sr) : int(s.end * sr)] for s in segments]
     return np.concatenate(parts) if parts else np.empty(0, dtype=samples.dtype)
 
 
@@ -221,9 +239,7 @@ def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
         support_s[name] = float(sum(w for p, w in weighted if p >= s.aed_prob_threshold))
 
     top = sorted(mean_prob.items(), key=lambda t: t[1], reverse=True)[:5]
-    sustained = [
-        (name, p) for name, p in mean_prob.items() if support_s[name] >= effective_floor
-    ]
+    sustained = [(name, p) for name, p in mean_prob.items() if support_s[name] >= effective_floor]
     present = bool(sustained)
     type_label = concise_label(max(sustained, key=lambda t: t[1])[0]) if present else ""
 

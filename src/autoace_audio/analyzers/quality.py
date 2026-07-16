@@ -3,8 +3,10 @@ independent of background noise by design.
 
 Architecture (task 7 rework; full rationale + per-call evidence table in
 task-7-report.md): SQUIM's PESQ tracked background SNR almost exactly on the 3
-labeled-clear anchor calls (the noisiest-but-technically-clean call scored the
-WORST PESQ of the three) — it measures general perceptual quality, which conflates
+labeled-clear anchor calls (measured on the original 60s scoring window — the
+noisiest-but-technically-clean call scored the WORST PESQ of the three; the shipped
+15s window shuffles that ranking, see task-7-report.md rework section, but the
+conclusion stands) — it measures general perceptual quality, which conflates
 channel damage with ambient noise, but this field is scored independent of
 background noise. So SQUIM PESQ/STOI bands can no longer be primary evidence.
 Primary evidence is now 4 deterministic, channel-only signals computed straight

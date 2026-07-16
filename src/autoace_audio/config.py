@@ -57,9 +57,11 @@ class Settings(BaseSettings):
     # --- Quality: deterministic channel evidence PRIMARY; SQUIM demoted to a
     # noise-conditioned backstop (task 7 rework -- full rationale, per-call evidence
     # table, and threshold calibrations in task-7-report.md). Original design scored
-    # SQUIM PESQ/STOI bands directly; measured on the 3 labeled-clear anchor calls,
-    # PESQ (2.11/1.64/2.09) ranked EXACTLY with independent, non-ML background SNR
-    # from noise.py (23.1/0.3/10.7 dB) -- SQUIM is responding to ambient noise, not
+    # SQUIM PESQ/STOI bands directly; measured on the 3 labeled-clear anchor calls
+    # with the original 60s scoring window, PESQ (2.11/1.64/2.09) ranked EXACTLY
+    # with independent, non-ML background SNR from noise.py (23.1/0.3/10.7 dB)
+    # (the shipped 15s window measures 1.95/2.18/2.34 -- ranking shuffles, but every
+    # value still clears the backstop floor) -- SQUIM is responding to ambient noise, not
     # channel distortion, but audio_quality is scored INDEPENDENT of background
     # noise (all 3 noisy-yet-clean-channel calls are labeled "clear"). PESQ/STOI
     # bands therefore cannot be primary evidence for this field. Replaced with 4
@@ -108,10 +110,11 @@ class Settings(BaseSettings):
 
     # SQUIM backstop gate: only escalates when PESQ is catastrophic AND the
     # background is clean enough that noise cannot be the excuse. No anchor trips
-    # this: call_001's SNR (23.1dB) clears snr_no_excuse_db but its PESQ (2.11)
-    # doesn't clear this floor; call_002/003's SNR (0.3/10.7dB) is below
-    # snr_no_excuse_db so the backstop is gated off regardless of their PESQ (1.64/
-    # 2.09) -- exactly the noise-confound case it exists to ignore.
+    # this (15s-window measurements): call_001's SNR (23.1dB) clears
+    # snr_no_excuse_db but its PESQ (1.95) doesn't clear this floor; call_002/003's
+    # SNR (0.3/10.7dB) is below snr_no_excuse_db so the backstop is gated off
+    # regardless of their PESQ (2.18/2.34) -- exactly the noise-confound case it
+    # exists to ignore.
     pesq_severe_backstop: float = 1.3
     # Deliberately the same boundary as noise.py's snr_low_db ("audible, doesn't
     # interfere"): above this, background noise is not loud enough to plausibly

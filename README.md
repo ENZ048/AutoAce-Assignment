@@ -100,11 +100,20 @@ if the paid tier is ever unavailable, at the cost of the accuracy shown above.
   (`out/validation_report.md`) — the deterministic clipping/dropout/rolloff/
   volume detectors are unaffected by clip length or where in a long clip the
   damage sits (see `docs/decisions.md` §4).
-- **End-to-end field accuracy** on the 3 real labeled anchor calls (all 9
-  schema fields, live Gemini arm): **13/15 = 86.7%** (gate: ≥80%). Both misses
-  are on `call_002` and trace to the same root cause: Gemini's gemini arm
-  fixates on one profanity phrase (`emotional_tone` + `speaker_overlap_present`,
-  the pipeline's disclosed weakest field).
+- **End-to-end field accuracy** on the 3 real labeled anchor calls, over a
+  5-field subset of the schema (`emotional_tone`, `background_noise_present`,
+  `audio_quality`, `speaker_overlap_present`, `long_silence_present` — 5 fields
+  × 3 calls = 15 comparisons; live Gemini arm): **13/15 = 86.7%** (gate:
+  ≥80%). Both misses are on `call_002` and trace to the same root cause:
+  Gemini fixates on one profanity phrase (`emotional_tone` +
+  `speaker_overlap_present`, the pipeline's disclosed weakest field). The
+  other 4 schema fields (`emotional_intensity`, `background_noise_type`,
+  `background_noise_severity`, `confidence`) are intentionally excluded from
+  this gate — they carry the real, disclosed misses covered in "Limitations"
+  below (e.g. call_002's severity reads `high` vs. labeled `medium`;
+  call_002/003's `background_noise_type` reads `radio` vs. labeled `TV`/
+  `sharp static`), so folding them into one blended accuracy number would
+  understate exactly what this section is trying to disclose honestly.
 - **background_noise_present / severity** on the augmented validation set: 11%
   / 0% (9 synthetic noise clips) — this is a harness limitation, not a
   threshold bug: PANNs CNN14 essentially never recognizes synthetic

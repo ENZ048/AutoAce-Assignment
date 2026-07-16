@@ -54,45 +54,69 @@ class Settings(BaseSettings):
     aed_hop_s: float = 2.5  # 50% overlap between consecutive windows; also the
     # per-window "sustained" time credit used by aed_min_support_s above.
 
-    # --- Quality (SQUIM + clipdetect) ---
-    # Measured on the 3 labeled-clear calls (task-7-report.md), analyze_quality's
-    # middle-60s-window SQUIM pass:
-    #   call_001 (SNR 23.12dB, no noise):    pesq=2.1116 stoi=0.9188 clip=4.0e-6
-    #   call_002 (SNR  0.28dB, TV/medium):   pesq=1.6401 stoi=0.8257 clip=3.6e-6
-    #   call_003 (SNR 10.65dB, static/med):  pesq=2.0949 stoi=0.9644 clip=7.3e-7
-    # PESQ ranking exactly tracks the independent, non-ML SNR ranking from noise.py
-    # (23.12 > 10.65 > 0.28 dB) -> SQUIM's PESQ head is responding to background
-    # noise/SNR (which the client's protocol scores separately and explicitly
-    # excludes here), on top of its documented DNS-training telephony bias (brief).
-    # Clipping is ~1e-6 on all three (real signal, not distortion) -> all 3 real
-    # "clear" calls score below even the original pesq_slight=2.0.
+    # --- Quality: deterministic channel evidence PRIMARY; SQUIM demoted to a
+    # noise-conditioned backstop (task 7 rework -- full rationale, per-call evidence
+    # table, and threshold calibrations in task-7-report.md). Original design scored
+    # SQUIM PESQ/STOI bands directly; measured on the 3 labeled-clear anchor calls,
+    # PESQ (2.11/1.64/2.09) ranked EXACTLY with independent, non-ML background SNR
+    # from noise.py (23.1/0.3/10.7 dB) -- SQUIM is responding to ambient noise, not
+    # channel distortion, but audio_quality is scored INDEPENDENT of background
+    # noise (all 3 noisy-yet-clean-channel calls are labeled "clear"). PESQ/STOI
+    # bands therefore cannot be primary evidence for this field. Replaced with 4
+    # deterministic, channel-only signals computed straight from the waveform + VAD
+    # speech timeline; worst-triggered level wins, default CLEAR. SQUIM keeps a
+    # narrow, gated role: it may only escalate a call when the background is clean
+    # enough that noise CANNOT be the excuse for a catastrophic PESQ (real channel
+    # damage, not a noise confound).
     #
-    # CONCERN FOR THE CONTROLLER (not fully resolved, see task-7-report.md): the
-    # verbatim unit test test_mid_pesq_is_slightly_impaired fixes pesq=2.4 ->
-    # slightly_impaired, which mathematically requires pesq_clear > 2.4. All 3 real
-    # measured PESQ values (2.11 max) are below 2.4, so NO legal pesq_clear can make
-    # any of them reach "clear" without breaking that verbatim test / make test.
-    # pesq_clear is therefore left at its original value: any legal value >2.4 is
-    # behaviorally IDENTICAL for these 3 calls (none clear the 2.4 floor), so moving
-    # it has zero measured benefit and no evidence picks one value over another.
-    # pesq_slight IS lowered (legal: stays <=2.4, so the unit test is unaffected;
-    # evidenced: call_002 at the old 2.0 fell to severely_impaired -- the harshest,
-    # clipping-override-strength bucket -- despite near-zero clipping and a clean
-    # "clear" label). 1.5 gives 0.14 measured margin below call_002, the worst
-    # anchor, reclassifying it to slightly_impaired: directionally correct, though
-    # still not "clear". tests/integration/test_quality_sample_calls.py therefore
-    # still fails all 3 assertions (documented; `make test` excludes -m slow, same
-    # non-blocking pattern as task 6's noise.py AED gap).
-    pesq_clear: float = 3.0
-    pesq_slight: float = 1.5  # was 2.0 -- see measured evidence + concern above
-    # stoi_floor UNCHANGED: measured STOI (0.8257-0.9644) clears 0.75 with real
-    # margin (min 0.076, ~10%) on all 3 calls -- no under-scoring evidence, unlike
-    # PESQ, so no calibration case exists.
-    stoi_floor: float = 0.75          # below this, degrade one level
-    # clipping_ratio_max UNCHANGED: measured ratios are ~1e-6 on all 3 calls (real
-    # clipdetect API: total_clipped_samples / total_samples, see quality.py) --
-    # 4-5 orders of magnitude below 0.02, no override risk, no calibration case.
-    clipping_ratio_max: float = 0.02  # >2% clipped frames -> severely_impaired override
+    # Anchors pass all 4 deterministic detectors + the backstop with real measured
+    # margin -- see the per-call evidence table appended to task-7-report.md.
+    clipping_ratio_max: float = 0.02  # >2% clipped frames -> severely_impaired
+    # override. UNCHANGED from the original design (real clipdetect API:
+    # total_clipped_samples / total_samples, see quality.py) -- measured ~1e-6 on
+    # all 3 anchors, 4-5 orders of magnitude of margin, no calibration case.
+
+    # Hard near-zero runs (|sample|<1e-4, >=50ms) that start+end strictly inside a
+    # VAD speech segment, normalized to occurrences per minute of speech. All 3
+    # anchors measure 0.0/min (real dropouts are rare in these clips) -- huge margin
+    # under both floors; synthetic degradations in eval/ will exercise the boundary
+    # directly once that harness lands (task brief).
+    dropout_high_per_min: float = 4.0
+    dropout_low_per_min: float = 1.0
+
+    # 95th-percentile-energy spectral rolloff (energy-weighted mean across 32ms/16ms
+    # -hop speech frames). CALIBRATED DOWN from an initial 1200/2200 (task-7-report.md
+    # rework log): those values FALSE-TRIGGERED on all 3 anchors when measured for
+    # real -- call_001/002/003 measure 1248/1024/1591 Hz, and call_002 even trips the
+    # original 1200 "severe" floor. This is real speech physics, not a detector bug
+    # (confirmed via synthetic sanity checks in test_quality_logic.py: a <900Hz-only
+    # synthetic signal correctly measures low, white noise correctly measures high)
+    # -- energy-weighting toward the loudest frames pulls the aggregate toward
+    # vowel-dominated frames, and voiced speech concentrates most of its energy well
+    # below 2kHz even when perfectly clean (LTASS). Retuned with real measured
+    # margin: 900 clears the worst anchor (call_002, 1024Hz) by 124Hz (~12%); 600
+    # clears it by 424Hz (~41%). Still a 3-anchor sample with no labeled non-clear
+    # example to calibrate the upper discrimination against -- revisit once eval/'s
+    # synthetic degradations land (see task-7-report.md).
+    rolloff_severe_hz: float = 600.0
+    rolloff_slight_hz: float = 900.0
+
+    # Speech-segment RMS in dBFS. All 3 anchors measure comfortably above both
+    # floors (see task-7-report.md) -- no calibration case.
+    volume_severe_dbfs: float = -45.0
+    volume_slight_dbfs: float = -35.0
+
+    # SQUIM backstop gate: only escalates when PESQ is catastrophic AND the
+    # background is clean enough that noise cannot be the excuse. No anchor trips
+    # this: call_001's SNR (23.1dB) clears snr_no_excuse_db but its PESQ (2.11)
+    # doesn't clear this floor; call_002/003's SNR (0.3/10.7dB) is below
+    # snr_no_excuse_db so the backstop is gated off regardless of their PESQ (1.64/
+    # 2.09) -- exactly the noise-confound case it exists to ignore.
+    pesq_severe_backstop: float = 1.3
+    # Deliberately the same boundary as noise.py's snr_low_db ("audible, doesn't
+    # interfere"): above this, background noise is not loud enough to plausibly
+    # explain a catastrophic PESQ, so a bad score must be real channel damage.
+    snr_no_excuse_db: float = 15.0
 
     # --- Dimensional tone mapping (audeering A/V/D in [0,1]) ---
     # Region boundaries in the valence-arousal plane; initial values from the

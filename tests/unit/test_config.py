@@ -6,7 +6,9 @@ def test_defaults_are_calibration_ready(monkeypatch):
     s = Settings(_env_file=None)
     assert s.long_silence_s == 10.0
     assert s.snr_none_db > s.snr_low_db > s.snr_medium_db
-    assert s.pesq_clear > s.pesq_slight
+    assert s.dropout_high_per_min > s.dropout_low_per_min
+    assert s.rolloff_slight_hz > s.rolloff_severe_hz
+    assert s.volume_slight_dbfs > s.volume_severe_dbfs
     assert s.tone_arm == "gemini"
     assert s.gemini_model == "gemini-3.1-flash-lite"
 

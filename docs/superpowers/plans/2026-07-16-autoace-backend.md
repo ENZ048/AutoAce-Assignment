@@ -67,6 +67,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "slow: needs local model download/inference",
     "network: needs API keys / internet",
@@ -108,10 +109,10 @@ analyze:
 	$(PY) -m autoace_audio analyze $(DIR) --out out/
 
 evaluate:
-	$(PY) eval/evaluate.py --pred out/results.json --labels data/labels.csv
+	$(PY) -m eval.evaluate --pred out/results.json --labels data/labels.csv
 
 bakeoff:
-	$(PY) eval/bakeoff.py --data data/ --out out/bakeoff.md
+	$(PY) -m eval.bakeoff --data data/ --out out/bakeoff.md
 ```
 
 - [ ] **Step 3: Write `src/autoace_audio/__init__.py`**
@@ -2356,10 +2357,6 @@ def _degrade(clean: np.ndarray, kind: str) -> np.ndarray:
             i = RNG.integers(0, max(1, len(x) - SR // 4))
             x[i: i + SR // 4] = 0.0
         return x
-    if kind == "bandlimit":
-        from scipy.signal import butter, sosfilt  # noqa: F401 — optional; fallback below
-
-        raise NotImplementedError
     return clean
 
 
@@ -2548,8 +2545,8 @@ if __name__ == "__main__":
 Run, in order:
 1. `.venv/bin/python eval/build_validation_set.py` → expect ~15–25 clips in `data/validation/`
 2. `.venv/bin/python -m autoace_audio analyze data/validation --out out/validation` (uses default gemini arm)
-3. `.venv/bin/python eval/evaluate.py --pred out/validation/results.json --labels data/validation/validation_manifest.csv --out out/validation_report.md`
-4. `.venv/bin/python eval/bakeoff.py --arms gemini dimensional`
+3. `.venv/bin/python -m eval.evaluate --pred out/validation/results.json --labels data/validation/validation_manifest.csv --out out/validation_report.md`
+4. `.venv/bin/python -m eval.bakeoff --arms gemini dimensional`
 Expected: severity/quality augmentation rows score ≥80%; bake-off table prints. **Act on results:** tune config thresholds where systematically off (grouped by source call — no leakage), record every change in `docs/decisions.md`.
 
 - [ ] **Step 9: Commit**

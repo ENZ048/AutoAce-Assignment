@@ -3,13 +3,15 @@ Manifest contract per brief: CSV with `name` (exact filename) and `result_json`.
 
 import csv
 import json
+import shutil
 import tempfile
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from autoace_audio.audio_io import DecodeError
-from autoace_audio.pipeline import analyze
+from autoace_audio.pipeline import PipelineOutput, analyze
 from autoace_audio.schema import AnalysisResult, FileError
 
 AUDIO_SUFFIXES = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".opus", ".webm"}
@@ -48,38 +50,56 @@ def validate_batch(input_dir: Path) -> tuple[list[Path], list[str]]:
     return files, warnings
 
 
-def _unzip_if_needed(input_path: Path) -> Path:
+def _unzip_if_needed(input_path: Path) -> tuple[Path, Path | None]:
+    """Extract ZIP if needed, return (working_dir, temp_dir_to_cleanup)."""
     if input_path.suffix.lower() == ".zip":
         target = Path(tempfile.mkdtemp(prefix="autoace_batch_"))
         with zipfile.ZipFile(input_path) as z:
             z.extractall(target)
-        inner = [d for d in target.iterdir() if d.is_dir()]
-        return inner[0] if len(inner) == 1 and not list(target.glob("*.csv")) else target
-    return input_path
+        # Determine which directory to process: if root has audio files, use it;
+        # elif one subdir exists and root has CSVs, move CSVs into subdir and use it;
+        # else use root.
+        non_csv_files = [p for p in target.iterdir() if p.is_file() and p.suffix.lower() != ".csv"]
+        if non_csv_files:
+            return target, target
+        subdirs = [d for d in target.iterdir() if d.is_dir()]
+        if len(subdirs) == 1:
+            csv_files = list(target.glob("*.csv"))
+            if csv_files:
+                # Move CSVs into the single subdirectory
+                for csv_file in csv_files:
+                    shutil.move(str(csv_file), str(subdirs[0] / csv_file.name))
+            return subdirs[0], target
+        return target, target
+    return input_path, None
 
 
 def run_batch(
     input_path: Path,
     out_dir: Path,
     tone_arm: str | None = None,
-    analyze_fn=analyze,
-    progress_cb=None,
+    analyze_fn: Callable[[Path, str | None], PipelineOutput] = analyze,
+    progress_cb: Callable[[int, int, str], None] | None = None,
 ) -> BatchReport:
-    input_dir = _unzip_if_needed(Path(input_path))
-    files, warnings = validate_batch(input_dir)
-    report = BatchReport(warnings=warnings)
-    for i, path in enumerate(files):
-        try:
-            out = analyze_fn(path, tone_arm=tone_arm)
-            report.results[path.name] = out.result
-        except DecodeError as e:
-            report.errors.append(FileError(name=path.name, error=f"decode: {e}"))
-        except Exception as e:  # noqa: BLE001 — isolation is the contract
-            report.errors.append(FileError(name=path.name, error=f"{type(e).__name__}: {e}"))
-        if progress_cb:
-            progress_cb(i + 1, len(files), path.name)
-    _write_outputs(report, Path(out_dir))
-    return report
+    input_dir, temp_dir = _unzip_if_needed(Path(input_path))
+    try:
+        files, warnings = validate_batch(input_dir)
+        report = BatchReport(warnings=warnings)
+        for i, path in enumerate(files):
+            try:
+                out = analyze_fn(path, tone_arm=tone_arm)
+                report.results[path.name] = out.result
+            except DecodeError as e:
+                report.errors.append(FileError(name=path.name, error=f"decode: {e}"))
+            except Exception as e:  # noqa: BLE001 — isolation is the contract
+                report.errors.append(FileError(name=path.name, error=f"{type(e).__name__}: {e}"))
+            if progress_cb:
+                progress_cb(i + 1, len(files), path.name)
+        _write_outputs(report, Path(out_dir))
+        return report
+    finally:
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _write_outputs(report: BatchReport, out_dir: Path) -> None:

@@ -21,3 +21,11 @@ def test_no_speech_at_all_is_one_giant_gap():
     m = build_vad_map([], total_s=30.0, long_silence_s=10.0)
     assert m.speech_ratio == 0.0
     assert m.long_silence_present
+
+
+def test_overlapping_segments_do_not_break_speech_ratio():
+    m = build_vad_map(
+        [Segment(0.0, 10.0), Segment(5.0, 15.0)], total_s=15.0, long_silence_s=10.0
+    )
+    assert m.speech_ratio == 1.0
+    assert m.gaps == []

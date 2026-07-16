@@ -35,7 +35,8 @@ def build_vad_map(speech: list[Segment], total_s: float, long_silence_s: float) 
     if total_s > cursor:
         gaps.append(Segment(cursor, total_s))
     max_gap = max((g.end - g.start for g in gaps), default=0.0)
-    speech_s = sum(s.end - s.start for s in speech)
+    # Union coverage, robust to overlapping input: everything that isn't a gap.
+    speech_s = max(0.0, total_s - sum(g.end - g.start for g in gaps))
     return VadMap(
         speech=speech,
         gaps=gaps,
@@ -49,7 +50,7 @@ def build_vad_map(speech: list[Segment], total_s: float, long_silence_s: float) 
 _MODEL = None
 
 
-def _model():
+def _model() -> object:
     global _MODEL
     if _MODEL is None:
         from silero_vad import load_silero_vad

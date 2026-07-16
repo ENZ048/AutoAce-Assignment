@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # --- VAD / silence ---
     # AutoAce labeled a 7.4s dead-air stretch long_silence=false -> bar is above that.
     long_silence_s: float = 10.0
+    # Silero defaults tightened for telephony: <250ms blips are usually artifacts;
+    # 300ms merges stutters.
     vad_min_speech_ms: int = 250
     vad_min_silence_ms: int = 300
 
@@ -38,7 +40,11 @@ class Settings(BaseSettings):
     stoi_floor: float = 0.75          # below this, degrade one level
     clipping_ratio_max: float = 0.02  # >2% clipped frames -> severely_impaired override
 
-    # --- Dimensional tone mapping (audeering A/V/D in [0,1]) — initial, calibrated in eval ---
+    # --- Dimensional tone mapping (audeering A/V/D in [0,1]) ---
+    # Region boundaries in the valence-arousal plane; initial values from the
+    # audeering model's roughly-centered output distribution (~0.5 mean), to be
+    # calibrated on the labeled + augmented validation set in eval/. Intensity
+    # bands follow the brief: low=subtle, medium=clear+sustained, high=escalated.
     va_satisfied_v: float = 0.60
     va_upset_v: float = 0.40
     va_upset_a: float = 0.60
@@ -50,6 +56,9 @@ class Settings(BaseSettings):
     intensity_a_high: float = 0.65
 
     # --- Fusion confidence ---
+    # Never emit 0.0/1.0 (calibration honesty: we always carry some uncertainty).
+    # Degraded cap 0.40: when the tone arm failed and a fallback answered, the tone
+    # fields are best-effort — confidence must signal that to the evaluator.
     confidence_floor: float = 0.05
     confidence_ceiling: float = 0.98
     tone_degraded_confidence_cap: float = 0.40

@@ -136,6 +136,37 @@ class Settings(BaseSettings):
     intensity_a_low: float = 0.45
     intensity_a_high: float = 0.65
 
+    # Dimensional-arm confidence: linear in distance-to-nearest-region-boundary.
+    # Floor is reachable exactly ON a boundary (boundary_dist == 0 -- maximum
+    # ambiguity between two adjacent V-A regions); ceiling caps confidence for a
+    # purely-threshold heuristic that never really "knows" it's right even far
+    # from every boundary. Uncalibrated initial guesses (no labeled confidence
+    # ground truth exists yet) -- revisit in eval/.
+    dim_confidence_floor: float = 0.35
+    dim_confidence_slope: float = 2.0
+    dim_confidence_ceiling: float = 0.85
+
+    # --- Gemini tone arm (Arm A) ---
+    # Low but nonzero: near-deterministic label classification while leaving the
+    # model enough sampling freedom that schema-constrained JSON decoding doesn't
+    # lock onto a bad greedy token path. Uncalibrated initial guess.
+    gemini_temperature: float = 0.1
+    # Fallback used only if the model's JSON response omits tone_confidence
+    # (a schema/contract violation) -- mid-range value signaling "we got an
+    # answer, but we don't actually know the model's own confidence in it."
+    gemini_default_confidence: float = 0.7
+
+    # --- Transcript-LLM tone arm (Arm C, bake-off only) ---
+    # Empty/unintelligible transcript -> low-confidence neutral default. Lower
+    # than gemini_default_confidence since this is a data problem (no usable
+    # speech at all), not just a missing field.
+    transcript_empty_confidence: float = 0.3
+    # Fallback if the model's JSON response omits tone_confidence -- mirrors
+    # gemini_default_confidence's rationale; kept as a separate setting since
+    # Arm C loses all prosody information (text transcript only) and may
+    # warrant a different calibration once eval/ has labeled data.
+    transcript_default_confidence: float = 0.6
+
     # --- Fusion confidence ---
     # Never emit 0.0/1.0 (calibration honesty: we always carry some uncertainty).
     # Degraded cap 0.40: when the tone arm failed and a fallback answered, the tone

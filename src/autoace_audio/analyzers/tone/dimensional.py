@@ -36,6 +36,28 @@ def map_va(arousal: float, valence: float) -> tuple[EmotionalTone, EmotionalInte
     return tone, intensity
 
 
+def confidence_from_va(arousal: float, valence: float) -> float:
+    """Confidence heuristic: distance to the nearest map_va() region boundary.
+    Reaches dim_confidence_floor exactly ON a boundary (boundary_dist == 0 --
+    maximum ambiguity between two adjacent V-A regions) and rises linearly
+    toward dim_confidence_ceiling the further arousal/valence sit from every
+    boundary."""
+    s = get_settings()
+    boundary_dist = min(
+        abs(valence - s.va_satisfied_v),
+        abs(valence - s.va_upset_v),
+        abs(valence - s.va_frustrated_v),
+        abs(arousal - s.va_upset_a),
+    )
+    return float(
+        np.clip(
+            s.dim_confidence_floor + s.dim_confidence_slope * boundary_dist,
+            s.dim_confidence_floor,
+            s.dim_confidence_ceiling,
+        )
+    )
+
+
 @dataclass
 class _Lazy:
     processor: object | None = None
@@ -108,22 +130,14 @@ def _avd(samples: np.ndarray, sr: int) -> tuple[float, float, float]:
 
 
 def classify(samples: np.ndarray, sr: int, vad: VadMap) -> ToneResult:
-    from autoace_audio.analyzers.noise import _slice  # speech-only audio
+    from autoace_audio.analyzers.noise import slice_segments  # speech-only audio
 
-    speech = _slice(samples, sr, vad.speech)
+    speech = slice_segments(samples, sr, vad.speech)
     if speech.size < sr:
         speech = samples
     arousal, dominance, valence = _avd(speech, sr)
     tone, intensity = map_va(arousal, valence)
-    # Confidence from distance to nearest mapping boundary (0.35 far -> 0.85 close-to-center).
-    s = get_settings()
-    boundary_dist = min(
-        abs(valence - s.va_satisfied_v),
-        abs(valence - s.va_upset_v),
-        abs(valence - s.va_frustrated_v),
-        abs(arousal - s.va_upset_a),
-    )
-    confidence = float(np.clip(0.45 + 2.0 * boundary_dist, 0.35, 0.85))
+    confidence = confidence_from_va(arousal, valence)
     return ToneResult(
         tone=tone,
         intensity=intensity,

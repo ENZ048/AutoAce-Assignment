@@ -69,6 +69,10 @@ Return JSON only."""
 _TONE = {t.value: t for t in EmotionalTone}
 _INT = {i.value: i for i in EmotionalIntensity}
 
+_MAX_ATTEMPTS = 3  # retries for transient network/API errors only (never for a
+# parse/contract failure -- that would silently re-send the same paid audio).
+_BACKOFF_BASE_S = 2  # exponential backoff: attempt 0/1/2 -> sleep 1s/2s/4s.
+
 
 def classify(samples: np.ndarray, sr: int, vad: VadMap, snr_db: float | None) -> ToneResult:
     s = get_settings()
@@ -81,35 +85,50 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap, snr_db: float | None) ->
     blob = encode_opus_ogg(samples, sr)
     prompt = build_prompt(samples.size / sr, snr_db, vad.speech_ratio)
     last_err: Exception | None = None
-    for attempt in range(3):
+    resp = None
+    for attempt in range(_MAX_ATTEMPTS):
         try:
             resp = client.models.generate_content(
                 model=s.gemini_model,
                 contents=[types.Part.from_bytes(data=blob, mime_type="audio/ogg"), prompt],
                 config=types.GenerateContentConfig(
-                    temperature=0.1,
+                    temperature=s.gemini_temperature,
                     response_mime_type="application/json",
                     response_schema=GEMINI_RESPONSE_SCHEMA,
                 ),
             )
-            data = json.loads(resp.text)
-            usage = getattr(resp, "usage_metadata", None)
-            return ToneResult(
-                tone=_TONE[data["emotional_tone"]],
-                intensity=_INT[data["emotional_intensity"]],
-                confidence=float(np.clip(data.get("tone_confidence", 0.7), 0.0, 1.0)),
-                overlap_opinion=bool(data["speaker_overlap_present"]),
-                noise_opinion={
-                    "present": bool(data["background_noise_present"]),
-                    "type": str(data.get("background_noise_type", "")),
-                },
-                raw={
-                    "response": data,
-                    "prompt_tokens": getattr(usage, "prompt_token_count", None),
-                    "output_tokens": getattr(usage, "candidates_token_count", None),
-                },
-            )
-        except Exception as e:  # noqa: BLE001 — uniform retry, re-raised below
+            break  # got a response back; parse it outside the retry loop below
+        except Exception as e:  # noqa: BLE001 — uniform retry for transient network/API errors
             last_err = e
-            time.sleep(2**attempt)
-    raise ToneClassifierError(f"gemini failed after 3 attempts: {last_err}")
+            resp = None
+            time.sleep(_BACKOFF_BASE_S**attempt)
+    else:
+        raise ToneClassifierError(f"gemini failed after {_MAX_ATTEMPTS} attempts: {last_err}")
+
+    # Parse/contract failures are never transient -- retrying would silently re-send
+    # the same paid audio for no benefit. Fail fast with the raw response attached.
+    try:
+        data = json.loads(resp.text)
+        usage = getattr(resp, "usage_metadata", None)
+        return ToneResult(
+            tone=_TONE[data["emotional_tone"]],
+            intensity=_INT[data["emotional_intensity"]],
+            confidence=float(
+                np.clip(data.get("tone_confidence", s.gemini_default_confidence), 0.0, 1.0)
+            ),
+            overlap_opinion=bool(data["speaker_overlap_present"]),
+            noise_opinion={
+                "present": bool(data["background_noise_present"]),
+                "type": str(data.get("background_noise_type", "")),
+            },
+            raw={
+                "response": data,
+                "prompt_tokens": getattr(usage, "prompt_token_count", None),
+                "output_tokens": getattr(usage, "candidates_token_count", None),
+            },
+        )
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        raise ToneClassifierError(
+            f"gemini returned an unparseable/invalid response: {e!r}; raw response text: "
+            f"{resp.text!r}"
+        ) from e

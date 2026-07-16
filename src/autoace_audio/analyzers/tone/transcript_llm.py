@@ -12,6 +12,9 @@ from autoace_audio.schema import EmotionalIntensity, EmotionalTone
 
 _WHISPER = None
 
+_TRANSCRIPT_PROMPT_CHARS = 8000  # cap on transcript text sent into the LLM prompt
+_TRANSCRIPT_RAW_CHARS = 2000  # cap on transcript text retained in ToneResult.raw
+
 
 def _whisper():
     global _WHISPER
@@ -36,7 +39,10 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap) -> ToneResult:
     text = transcribe(samples, sr)
     if not text.strip():
         return ToneResult(
-            EmotionalTone.NEUTRAL, EmotionalIntensity.LOW, 0.3, raw={"transcript": ""}
+            EmotionalTone.NEUTRAL,
+            EmotionalIntensity.LOW,
+            s.transcript_empty_confidence,
+            raw={"transcript": ""},
         )
     client = OpenAI(api_key=s.openai_api_key)
     resp = client.chat.completions.create(
@@ -51,7 +57,8 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap) -> ToneResult:
                     '[neutral,satisfied,frustrated,upset,distressed], "emotional_intensity": '
                     'one of [low,medium,high], "tone_confidence": 0..1}.\n'
                     "frustrated=annoyed/impatient without strong anger; upset=clearly angry; "
-                    "distressed=overwhelmed/panicked/crying.\n\nTranscript:\n" + text[:8000]
+                    "distressed=overwhelmed/panicked/crying.\n\nTranscript:\n"
+                    + text[:_TRANSCRIPT_PROMPT_CHARS]
                 ),
             }
         ],
@@ -60,6 +67,8 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap) -> ToneResult:
     return ToneResult(
         tone=EmotionalTone(data["emotional_tone"]),
         intensity=EmotionalIntensity(data["emotional_intensity"]),
-        confidence=float(np.clip(data.get("tone_confidence", 0.6), 0, 1)),
-        raw={"transcript": text[:2000], "response": data},
+        confidence=float(
+            np.clip(data.get("tone_confidence", s.transcript_default_confidence), 0, 1)
+        ),
+        raw={"transcript": text[:_TRANSCRIPT_RAW_CHARS], "response": data},
     )

@@ -101,14 +101,16 @@ def _rms(x: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(x)))) if x.size else 0.0
 
 
-def _slice(samples: np.ndarray, sr: int, segments) -> np.ndarray:
+def slice_segments(samples: np.ndarray, sr: int, segments) -> np.ndarray:
+    """Concatenate the sample ranges covered by `segments` (shared by noise.py's
+    own SNR calc and the tone arms' speech-only slicing)."""
     parts = [samples[int(s.start * sr) : int(s.end * sr)] for s in segments]
     return np.concatenate(parts) if parts else np.empty(0, dtype=samples.dtype)
 
 
 def snr_db(samples: np.ndarray, sr: int, vad: VadMap) -> float | None:
-    speech = _slice(samples, sr, vad.speech)
-    gaps = _slice(samples, sr, vad.gaps)
+    speech = slice_segments(samples, sr, vad.speech)
+    gaps = slice_segments(samples, sr, vad.gaps)
     if speech.size == 0 or gaps.size < int(0.3 * sr):  # need >=300ms of gap evidence
         return None
     p_speech, p_noise = _rms(speech), _rms(gaps)

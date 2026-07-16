@@ -148,16 +148,41 @@ def _window_starts(total_n: int, window_n: int, hop_n: int) -> list[int]:
     return starts
 
 
+def _support_weights(
+    starts: list[float], total_s: float, window_s: float, hop_s: float
+) -> list[float]:
+    """Residual-ownership "sustained" credit in seconds, one per window in `starts`
+    (seconds, ascending — as produced by `_window_starts`, converted to seconds). A
+    single window (clip no longer than one window) owns the whole clip, capped at
+    window_s. Otherwise the first window owns hop_s and every later window owns only
+    min(hop_s, the gap from the previous window's start) — a tail-anchored window
+    can sit much closer than hop_s to its predecessor (e.g. a 172s clip's last two
+    windows are only 2.0s apart, a 60% overlap; a 5.1s clip's are 0.1s apart, 98%),
+    so this caps what it can claim: one spike straddling two near-duplicate windows
+    can't be double-counted as two independent detections. On clips too short to
+    offer two independently-spaced windows, sum(weights) can come out below
+    aed_min_support_s — see analyze_noise's effective_floor, which accepts the best
+    available evidence instead of demanding support the clip physically cannot
+    provide."""
+    if len(starts) == 1:
+        return [min(total_s, window_s)]
+    weights = [hop_s]
+    for prev, cur in zip(starts, starts[1:], strict=False):  # pairwise: len differs by 1
+        weights.append(min(hop_s, cur - prev))
+    return weights
+
+
 def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
     """AED runs on sliding windows over the FULL clip. A class is "sustained" (and
     only then counts toward presence) if the windows where it scores >=
-    aed_prob_threshold cover >= aed_min_support_s of hop-weighted time — each
-    activated window credits aed_hop_s of support (total clip length, for the
-    short-clip single-window fallback). This requires multiple consecutive
-    activations, not one spike, which is what filters out CNN14's overconfident-but-
-    wrong single-window reads on short/out-of-distribution audio. top_events reports
-    the duration-weighted mean probability per class across ALL windows (whether
-    sustained or not) so near-misses stay visible for diagnostics.
+    aed_prob_threshold cover >= an effective support floor (see `_support_weights`
+    and the effective_floor calc below) of residual-ownership window time. This
+    requires multiple, genuinely-spaced activations — not one spike, and not one
+    spike seen twice through overlapping windows — which is what filters out
+    CNN14's overconfident-but-wrong single-window reads on short/out-of-distribution
+    audio. top_events reports the duration-weighted mean probability per class
+    across ALL windows (whether sustained or not) so near-misses stay visible for
+    diagnostics.
     """
     import torch
     import torchaudio.functional as F
@@ -167,20 +192,24 @@ def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
     window_n = max(1, int(round(s.aed_window_s * sr)))
     hop_n = max(1, int(round(s.aed_hop_s * sr)))
     starts = _window_starts(samples.size, window_n, hop_n)
-    single_fallback = len(starts) == 1 and samples.size < window_n
 
-    if single_fallback:
+    if len(starts) == 1:
         clips16k = samples[np.newaxis, :]
-        weights = [total_s]
     else:
         clips16k = np.stack([samples[st : st + window_n] for st in starts])
-        weights = [s.aed_hop_s] * len(starts)
+    weights = _support_weights([st / sr for st in starts], total_s, s.aed_window_s, s.aed_hop_s)
 
     clips32k = F.resample(torch.from_numpy(clips16k), sr, 32000).numpy()
     clipwise, _ = _tagger().inference(clips32k)  # (n_windows, n_classes)
 
     names = _audioset_labels()
     total_weight = sum(weights)
+    # Floor-cap: on a clip too short to offer aed_min_support_s of independently-
+    # spaced window evidence (a <5s single-window clip, or a ~5-10s two-window clip
+    # whose windows are forced close together), the configured floor is physically
+    # unreachable — accept the best available evidence instead of the clip never
+    # being able to report presence at all.
+    effective_floor = min(s.aed_min_support_s, total_weight)
     mean_prob: dict[str, float] = {}
     support_s: dict[str, float] = {}
     for i, name in enumerate(names):
@@ -193,7 +222,7 @@ def analyze_noise(samples: np.ndarray, sr: int, vad: VadMap) -> NoiseResult:
 
     top = sorted(mean_prob.items(), key=lambda t: t[1], reverse=True)[:5]
     sustained = [
-        (name, p) for name, p in mean_prob.items() if support_s[name] >= s.aed_min_support_s
+        (name, p) for name, p in mean_prob.items() if support_s[name] >= effective_floor
     ]
     present = bool(sustained)
     type_label = concise_label(max(sustained, key=lambda t: t[1])[0]) if present else ""

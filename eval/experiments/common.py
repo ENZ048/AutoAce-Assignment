@@ -118,3 +118,18 @@ def wins_field(baseline_runs: list[dict], lever_runs: list[dict], field: str, cl
     if base_n == 0 or lever_n == 0:
         return False
     return base_ok <= base_n // 3 and lever_ok >= (2 * lever_n + 2) // 3
+
+
+def loses_field(baseline_runs: list[dict], lever_runs: list[dict], field: str, clip: str) -> bool:
+    """Mirror of wins_field, same 2-of-3 thresholds inverted: a lever
+    REGRESSES a clip/field if baseline was solidly right (>=2/3) and the
+    lever is solidly wrong (<=1/3) there -- a previously-correct answer
+    destabilized. Standing amendment across this study (spec S7 / Study
+    Task 5's E3 finding): wins and regressions get equal prominence, so a
+    lever's net effect (wins minus regressions), not a lone wins_field hit,
+    is what decides inclusion in the combined stack."""
+    base_ok, base_n = _correct_count(baseline_runs, field, clip)
+    lever_ok, lever_n = _correct_count(lever_runs, field, clip)
+    if base_n == 0 or lever_n == 0:
+        return False
+    return base_ok >= (2 * base_n + 2) // 3 and lever_ok <= lever_n // 3

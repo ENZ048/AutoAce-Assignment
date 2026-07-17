@@ -74,7 +74,7 @@ def _noise_clips() -> dict[str, dict]:
     return out
 
 
-def ask_gemini_gaps(blob: bytes) -> tuple[dict, float]:
+def ask_gemini_gaps(blob: bytes) -> tuple[dict, float, dict]:
     from google import genai
     from google.genai import types
 
@@ -91,10 +91,14 @@ def ask_gemini_gaps(blob: bytes) -> tuple[dict, float]:
     )
     data = json.loads(resp.text)
     usage = getattr(resp, "usage_metadata", None)
-    cost = gemini_cost(
-        getattr(usage, "prompt_token_count", None), getattr(usage, "candidates_token_count", None)
-    )
-    return data, cost
+    in_tok = getattr(usage, "prompt_token_count", None)
+    out_tok = getattr(usage, "candidates_token_count", None)
+    cost = gemini_cost(in_tok, out_tok)
+    # Task 8 amendment: surface tokens too (was cost-only) so combined.py's
+    # gap-listening lever can log per-clip tokens like every other Task 5-8
+    # module. Old 2-tuple callers must widen to 3 -- this module's only
+    # caller is run_once below, updated in the same change.
+    return data, cost, {"in": in_tok, "out": out_tok}
 
 
 def run_once(run_idx: int) -> dict:
@@ -123,7 +127,7 @@ def run_once(run_idx: int) -> dict:
                 "truth": truth,
             }
             continue
-        pred, c = ask_gemini_gaps(encode_opus_ogg(gaps, audio.sr))
+        pred, c, tokens = ask_gemini_gaps(encode_opus_ogg(gaps, audio.sr))
         cost += c
         per_clip[path.name] = {
             "skipped": False,
@@ -132,6 +136,8 @@ def run_once(run_idx: int) -> dict:
             "truth": truth,
             "present_correct": bool(pred["background_noise_present"])
             == bool(truth["background_noise_present"]),
+            "tokens": tokens,  # Task 8 amendment: was cost-only before
+            "cost_usd": c,
         }
     guard.add(cost)
     payload = {"exp": "exp1_gap_noise", "run": run_idx, "cost_usd": cost, "per_clip": per_clip}

@@ -1,3 +1,6 @@
+import pytest
+
+from autoace_audio.analyzers.tone.base import ToneClassifierError, classify_tone
 from autoace_audio.analyzers.tone.dimensional import confidence_from_va, map_va
 from autoace_audio.schema import EmotionalIntensity, EmotionalTone
 
@@ -37,3 +40,11 @@ def test_confidence_ceiling_far_from_every_boundary():
     # va_satisfied_v/va_upset_v/va_frustrated_v) -> boundary_dist=0.4, well past
     # the ceiling's saturation point.
     assert confidence_from_va(arousal=0.0, valence=1.0) == 0.85
+
+
+def test_classify_tone_raises_on_unknown_arm():
+    """Missing coverage flagged by review: base.py's dispatcher must fail fast
+    (ToneClassifierError) on an arm name that isn't gemini/dimensional/transcript,
+    rather than silently doing nothing or raising a bare KeyError-style crash."""
+    with pytest.raises(ToneClassifierError):
+        classify_tone(arm="bogus", samples=None, sr=16000, vad=None, snr_db=None)

@@ -18,11 +18,12 @@ _GEMINI_CASES = [
         "neutral",
         marks=pytest.mark.xfail(
             reason=(
-                "gemini anchors on a single Spanish profanity ('mama huevo') as frustration "
+                "gemini anchors on a single Spanish profanity phrase as frustration "
                 "evidence despite 4 build_prompt wording iterations explicitly instructing it "
                 "not to treat one-off crude language as sufficient evidence without independent "
-                "escalation; label disagreement recorded in task-8-report.md; revisit at the "
-                "Task 11 bake-off."
+                "escalation; label disagreement recorded in task-8-report.md; the Task 11 "
+                "bake-off reconfirmed this adjudication (gemini's only miss on the 3-call "
+                "sample, no prompt change made)."
             ),
             strict=False,
         ),
@@ -45,7 +46,8 @@ def test_gemini_arm_matches_labels(sample_calls_dir, name, tone):
     reason=(
         "dimensional arm's no-diarization limitation: valence of the 172s agent-dominated "
         "call_003 is diluted below the upset call_001's valence; measured AVD values recorded "
-        "in task-8-report.md; Task 11 bake-off quantifies."
+        "in task-8-report.md; the Task 11 bake-off reconfirmed this limitation (dimensional "
+        "scored 0/3 on the 3-call sample)."
     ),
     strict=False,
 )

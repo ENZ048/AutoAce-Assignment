@@ -22,7 +22,7 @@ analyze:
 	$(PY) -m autoace_audio analyze $(DIR) --out out/
 
 evaluate:
-	$(PY) -m eval.evaluate --pred out/results.json --labels data/labels.csv
+	$(PY) -m eval.evaluate --pred out/results.json --labels data/labels.csv --out out/validation_report.md
 
 bakeoff:
 	$(PY) -m eval.bakeoff --data data/ --out out/bakeoff.md

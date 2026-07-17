@@ -31,21 +31,26 @@ def _find_manifest(input_dir: Path) -> Path | None:
 
 def validate_batch(input_dir: Path) -> tuple[list[Path], list[str]]:
     """Cross-check manifest rows vs files on disk, both directions."""
-    files = sorted(
-        p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_SUFFIXES
-    )
+    all_by_name = {p.name: p for p in input_dir.iterdir() if p.is_file()}
     warnings: list[str] = []
     manifest = _find_manifest(input_dir)
     if manifest is None:
+        files = sorted(p for p in all_by_name.values() if p.suffix.lower() in AUDIO_SUFFIXES)
         warnings.append("no CSV manifest found — processing every audio file")
         return files, warnings
     with open(manifest, newline="", encoding="utf-8-sig") as f:
         rows = [r for r in csv.DictReader(f) if r.get("name")]
     manifest_names = {r["name"].strip() for r in rows}
-    disk_names = {p.name for p in files}
-    for name in sorted(manifest_names - disk_names):
+    suffix_names = {name for name, p in all_by_name.items() if p.suffix.lower() in AUDIO_SUFFIXES}
+    # A manifest-listed file that exists on disk is processed regardless of its
+    # extension -- decode is ffprobe content-sniffing, never extension-based (see
+    # audio_io.py's module docstring); an unrecognized suffix must never silently
+    # drop a real, manifest-referenced file.
+    keep_names = suffix_names | (manifest_names & all_by_name.keys())
+    files = sorted(all_by_name[name] for name in keep_names)
+    for name in sorted(manifest_names - all_by_name.keys()):
         warnings.append(f"manifest row has no file on disk: {name}")
-    for name in sorted(disk_names - manifest_names):
+    for name in sorted(suffix_names - manifest_names):
         warnings.append(f"file not listed in manifest (processed anyway): {name}")
     return files, warnings
 
@@ -85,16 +90,29 @@ def run_batch(
     try:
         files, warnings = validate_batch(input_dir)
         report = BatchReport(warnings=warnings)
+        # Per-file diagnostics never leave this function -- BatchReport's public
+        # shape stays exactly what it was; we only need a count out of it below.
+        tone_fallback_count = 0
         for i, path in enumerate(files):
             try:
                 out = analyze_fn(path, tone_arm=tone_arm)
                 report.results[path.name] = out.result
+                if out.diagnostics.get("tone_error"):
+                    tone_fallback_count += 1
             except DecodeError as e:
                 report.errors.append(FileError(name=path.name, error=f"decode: {e}"))
             except Exception as e:  # noqa: BLE001 — isolation is the contract
                 report.errors.append(FileError(name=path.name, error=f"{type(e).__name__}: {e}"))
             if progress_cb:
                 progress_cb(i + 1, len(files), path.name)
+        if tone_fallback_count > 0:
+            # A silent whole-batch tone downgrade (every fallback is a per-file
+            # tone-arm miss) must be visible at the report level, not just buried
+            # in per-file diagnostics that callers may never inspect.
+            report.warnings.append(
+                f"{tone_fallback_count}/{len(files)} files fell back from the "
+                "requested tone arm (see tone_error)"
+            )
         _write_outputs(report, Path(out_dir))
         return report
     finally:
@@ -104,15 +122,24 @@ def run_batch(
 
 def _write_outputs(report: BatchReport, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    with open(out_dir / "results.csv", "w", newline="") as f:
+    # Explicit utf-8 everywhere: background_noise_type (and error text) can carry
+    # non-ASCII, and locale-default writes are a real deliverable risk on any box
+    # whose locale isn't UTF-8. ensure_ascii=False keeps results.json human-readable
+    # (real characters) instead of \uXXXX-escaping every non-ASCII value.
+    with open(out_dir / "results.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["name", "result_json"])
         for name, result in report.results.items():
             w.writerow([name, result.to_result_json()])
     (out_dir / "results.json").write_text(
-        json.dumps({n: json.loads(r.to_result_json()) for n, r in report.results.items()}, indent=2)
+        json.dumps(
+            {n: json.loads(r.to_result_json()) for n, r in report.results.items()},
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
     )
-    with open(out_dir / "errors.csv", "w", newline="") as f:
+    with open(out_dir / "errors.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["name", "error"])
         for e in report.errors:

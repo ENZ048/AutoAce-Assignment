@@ -107,6 +107,8 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap, snr_db: float | None) ->
 
     # Parse/contract failures are never transient -- retrying would silently re-send
     # the same paid audio for no benefit. Fail fast with the raw response attached.
+    # TypeError is included because a safety-blocked response has resp.text=None,
+    # and json.loads(None) raises TypeError, not JSONDecodeError.
     try:
         data = json.loads(resp.text)
         usage = getattr(resp, "usage_metadata", None)
@@ -127,7 +129,7 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap, snr_db: float | None) ->
                 "output_tokens": getattr(usage, "candidates_token_count", None),
             },
         )
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
         raise ToneClassifierError(
             f"gemini returned an unparseable/invalid response: {e!r}; raw response text: "
             f"{resp.text!r}"

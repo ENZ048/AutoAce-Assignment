@@ -6,7 +6,7 @@ from pathlib import Path
 
 from autoace_audio.analyzers.noise import analyze_noise
 from autoace_audio.analyzers.quality import analyze_quality
-from autoace_audio.analyzers.tone.base import ToneClassifierError, classify_tone
+from autoace_audio.analyzers.tone.base import classify_tone
 from autoace_audio.analyzers.vad import analyze_vad
 from autoace_audio.audio_io import load_audio
 from autoace_audio.config import get_settings
@@ -37,13 +37,17 @@ def analyze(path: Path, tone_arm: str | None = None) -> PipelineOutput:
     try:
         tone = classify_tone(arm, audio.samples, audio.sr, vad, noise.snr_db)
         tone_arm_used = arm
-    except ToneClassifierError as e:
+    except Exception as e:  # noqa: BLE001 -- graceful degradation is the contract:
+        # a dimensional model-load failure (raw OSError/HF errors, not just
+        # ToneClassifierError) must never crash analyze() and discard the
+        # already-computed deterministic fields (design doc §8: total failure
+        # only on undecodable audio).
         tone_error = str(e)
         if arm != "dimensional":  # local fallback arm -- no network/API dependency
             try:
                 tone = classify_tone("dimensional", audio.samples, audio.sr, vad, noise.snr_db)
                 tone_arm_used = "dimensional"
-            except ToneClassifierError as e2:
+            except Exception as e2:  # noqa: BLE001 -- same rationale as above
                 tone_error = f"{tone_error}; fallback: {e2}"
     result = fuse(vad, noise, quality, tone, tone_error)
     return PipelineOutput(
@@ -57,7 +61,10 @@ def analyze(path: Path, tone_arm: str | None = None) -> PipelineOutput:
             # reached fuse() -- "dimensional" after a fallback, same as tone_arm on
             # the happy path, None if every arm (primary + fallback) failed.
             "tone_error": tone_error,
-            "gemini_tokens": (tone.raw.get("prompt_tokens") if tone else None),
+            "tone_prompt_tokens": (tone.raw.get("prompt_tokens") if tone else None),
+            # Renamed from gemini_tokens: this reports whichever arm actually
+            # produced the tone result (gemini or transcript both populate
+            # raw["prompt_tokens"]; dimensional has none, so this is None).
             "elapsed_s": round(time.monotonic() - t0, 2),
         },
     )

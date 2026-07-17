@@ -63,8 +63,11 @@ def _loop_for_dropouts(
     return looped, looped_vad
 
 
-def _segments(samples, vad, min_s=15.0, max_s=45.0):
-    """Contiguous windows aligned to speech activity."""
+def _segments(samples, min_s=15.0, max_s=45.0):
+    """Fixed-stride chopping: tiles the clip into contiguous [min_s, max_s)-second
+    windows from the start. Purely duration-based -- does NOT align to VAD speech
+    activity (the `vad` parameter this used to take was never referenced in the
+    body and has been removed)."""
     total = samples.size / SR
     out, start = [], 0.0
     while start + min_s < total:
@@ -190,7 +193,7 @@ def main(data_dir: Path, out_dir: Path) -> None:
         )
         if meta["noise"] and gap_audio.size > SR:
             beds[meta["noise"]] = gap_audio
-        for j, (s0, s1) in enumerate(_segments(audio.samples, vad)):
+        for j, (s0, s1) in enumerate(_segments(audio.samples)):
             seg = audio.samples[int(s0 * SR) : int(s1 * SR)]
             seg_name = f"{Path(name).stem}_seg{j}.wav"
             sf.write(out_dir / seg_name, seg, SR)

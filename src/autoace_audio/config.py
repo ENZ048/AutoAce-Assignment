@@ -25,7 +25,14 @@ class Settings(BaseSettings):
     vad_min_silence_ms: int = 300
 
     # --- Noise severity via SNR (speech RMS vs non-speech RMS, dB) ---
-    snr_none_db: float = 20.0  # > this: no meaningful interference
+    # Documents the spec's band boundary (> this: no meaningful interference) but
+    # is NOT consumed by severity_from_snr (noise.py): severity is only computed
+    # when present=True, and the `not present` branch returns NONE directly --
+    # presence gating makes the "none" band structurally unreachable through the
+    # SNR comparison chain. Kept as a setting because test_config.py asserts the
+    # 3-band ordering (snr_none_db > snr_low_db > snr_medium_db) as a
+    # calibration-sanity invariant.
+    snr_none_db: float = 20.0
     snr_low_db: float = 15.0  # (low..none]: audible, doesn't interfere
     snr_medium_db: float = 5.0  # (medium..low]: occasionally interferes; <= : high
 

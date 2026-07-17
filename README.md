@@ -193,6 +193,14 @@ before any push.
 - **Gemini bake-off sample is n=3** — every number in the tone-arm table above
   is directional, not statistically powered. A single clip flipping changes
   each arm's accuracy by 33 points.
+- **The Gemini prompt's decision rules were shaped on the same 3 labeled anchor
+  calls** used everywhere else in this disclosure — the repeated-hello
+  escalation rule (classify as `upset` after 3+ unanswered greetings) and the
+  profanity-requires-corroboration rule (a single crude aside is insufficient
+  evidence without independent, sustained escalation elsewhere in the call)
+  were iterated specifically against `call_001`/`call_002`/`call_003`. Their
+  generalization to other callers, languages, or phrasing is unvalidated
+  (n=3).
 - **call_002's tone label is a recorded disagreement**, not an unhandled bug:
   the model consistently reads a single Spanish profanity phrase as decisive
   frustration evidence across 4 independent prompt-wording iterations, despite

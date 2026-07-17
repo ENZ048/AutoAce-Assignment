@@ -99,3 +99,25 @@ def test_tone_arm_used_is_none_when_every_arm_fails(monkeypatch, tmp_path):
     assert "fallback: dimensional failed" in out.diagnostics["tone_error"]
     # No tone arm at all reached fuse() -- degrades to neutral/low per fusion.py.
     assert out.result.emotional_tone == EmotionalTone.NEUTRAL
+
+
+def test_analyze_survives_a_raw_non_tone_classifier_exception(monkeypatch, tmp_path):
+    """Reviewer finding: dimensional model-load failures raise raw OSError/HF errors,
+    not ToneClassifierError. analyze() must degrade gracefully (neutral tone +
+    tone_error set, already-computed deterministic fields preserved) instead of
+    letting the raw exception crash the whole pipeline (design doc §8: total
+    failure only on undecodable audio)."""
+    _patch_common(monkeypatch)
+
+    def always_raise_raw(arm, samples, sr, vad, snr_db):
+        raise RuntimeError(f"{arm} blew up")
+
+    monkeypatch.setattr(pipeline_mod, "classify_tone", always_raise_raw)
+
+    out = pipeline_mod.analyze(tmp_path / "fake.ogg", tone_arm="gemini")
+
+    assert out.diagnostics["tone_arm"] == "gemini"
+    assert out.diagnostics["tone_arm_used"] is None
+    assert "gemini blew up" in out.diagnostics["tone_error"]
+    assert "fallback: dimensional blew up" in out.diagnostics["tone_error"]
+    assert out.result.emotional_tone == EmotionalTone.NEUTRAL

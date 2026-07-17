@@ -17,8 +17,11 @@ def test_call_002_has_noise_call_001_does_not(sample_calls_dir):
 
 @pytest.mark.slow
 @pytest.mark.xfail(
-    reason="CNN14 lacks a static/crackle response for this noise; pipeline covers it "
-    "via the audio-LLM noise opinion in fusion",
+    reason="CNN14 lacks a static/crackle response for this noise; fusion's audio-LLM "
+    "noise-opinion backstop (Rule B) is designed to cover this case but has zero observed "
+    "live triggers -- Gemini denies background_noise_present outright for this noise family "
+    "(call_003 and all 9 synthetic static/hum/TV-bleed clips tested); see docs/decisions.md "
+    "Task 9 and Task 11 section 2",
     strict=False,
 )
 def test_call_003_static_detected(sample_calls_dir):

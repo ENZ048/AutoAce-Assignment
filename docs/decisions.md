@@ -205,7 +205,7 @@ this field — not a bug, a domain mismatch.
   and call_001 (round 3), but call_002 never moved: the model's own rationale
   each time acknowledges "the rest of the call is calm/low-intensity" yet
   still scores `frustrated`, anchored entirely on a single Spanish
-  slang/profanity phrase ("mamá huevo," used once, briefly) despite explicit,
+  profanity phrase (used once, briefly) despite explicit,
   increasingly forceful instructions to require independent sustained
   escalation evidence before letting one crude word move the score. Stopped
   at the agreed 4-iteration cap. Controller adjudication: accept as a known

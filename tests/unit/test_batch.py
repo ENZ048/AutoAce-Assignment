@@ -142,3 +142,68 @@ def test_temp_dir_cleanup_after_run_batch(tmp_path):
     # Verify temp dir was cleaned up
     assert len(created_dirs) == 1
     assert not Path(created_dirs[0]).exists()
+
+
+def test_manifest_row_with_nonstandard_extension_is_processed_not_warned_missing(tmp_path):
+    """Reviewer finding: decode is ffprobe content-sniffing, never extension-based
+    (see audio_io.py) -- a manifest row naming a file that actually exists on disk
+    must be processed regardless of its suffix, and must never be reported as
+    missing just because that suffix isn't in the allowlist."""
+    d = _mkbatch(tmp_path, ["a.wav", "call_004.oga"], [["a.wav", ""], ["call_004.oga", ""]])
+
+    files, warnings = validate_batch(d)
+    assert {f.name for f in files} == {"a.wav", "call_004.oga"}
+    assert not any("call_004.oga" in w for w in warnings)
+
+    report = run_batch(d, tmp_path / "out", analyze_fn=_fake_analyze)
+    assert set(report.results) == {"a.wav", "call_004.oga"}
+    assert not any("call_004.oga" in w for w in report.warnings)
+
+
+def test_run_batch_warns_when_files_fall_back_from_requested_tone_arm(tmp_path):
+    """Reviewer finding: a per-file tone-arm downgrade (primary arm failed, local
+    fallback answered instead) must surface as a batch-level warning -- run_batch
+    must not silently discard diagnostics that would reveal a whole-batch tone
+    quality regression."""
+    d = _mkbatch(
+        tmp_path,
+        ["ok.wav", "degraded.wav"],
+        [["ok.wav", ""], ["degraded.wav", ""]],
+    )
+
+    def fake_analyze(path, tone_arm=None):
+        if "degraded" in Path(path).name:
+            diagnostics = {"tone_error": "gemini failed; fallback: dimensional ok"}
+        else:
+            diagnostics = {"tone_error": None}
+        return PipelineOutput(result=GOOD, diagnostics=diagnostics)
+
+    report = run_batch(d, tmp_path / "out", analyze_fn=fake_analyze)
+    assert any(
+        "1/2 files fell back from the requested tone arm (see tone_error)" in w
+        for w in report.warnings
+    )
+
+
+def test_run_batch_no_fallback_warning_when_no_tone_errors(tmp_path):
+    """No warning noise when every file's tone arm succeeded outright."""
+    d = _mkbatch(tmp_path, ["ok.wav"], [["ok.wav", ""]])
+    report = run_batch(d, tmp_path / "out", analyze_fn=_fake_analyze)
+    assert not any("fell back from the requested tone arm" in w for w in report.warnings)
+
+
+def test_output_files_use_utf8_encoding_for_non_ascii_fields(tmp_path):
+    """Reviewer finding: background_noise_type can carry non-ASCII text; output
+    writes must not depend on the platform's locale-default encoding."""
+    unicode_result = GOOD.model_copy(update={"background_noise_type": "música de fondo"})
+
+    def fake_analyze(path, tone_arm=None):
+        return PipelineOutput(result=unicode_result, diagnostics={})
+
+    d = _mkbatch(tmp_path, ["a.wav"], [["a.wav", ""]])
+    run_batch(d, tmp_path / "out", analyze_fn=fake_analyze)
+
+    csv_text = (tmp_path / "out" / "results.csv").read_text(encoding="utf-8")
+    assert "música de fondo" in csv_text
+    json_text = (tmp_path / "out" / "results.json").read_text(encoding="utf-8")
+    assert "música de fondo" in json_text

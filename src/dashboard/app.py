@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from dashboard import api, runner, store
 from dashboard.config import get_dashboard_settings
@@ -69,6 +69,9 @@ def create_app() -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
+            # Undefined /api/* paths should return JSON 404, not the SPA shell
+            if path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not found")
             # A literal ".." substring check isn't enough: a percent-encoded leading
             # slash (e.g. GET /%2Fetc%2Fpasswd -> path="/etc/passwd") makes `dist /
             # path` discard `dist` entirely, since pathlib resets the join on an

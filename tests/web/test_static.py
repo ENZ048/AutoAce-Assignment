@@ -19,6 +19,13 @@ def test_api_404_stays_json_404(client, auth_header):
     assert r.json()["detail"] == "Job not found"
 
 
+@pytest.mark.skipif(not DIST.exists(), reason="webapp not built")
+def test_undefined_api_path_is_json_404_not_spa(client):
+    r = client.get("/api/definitely/not/a/route")
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+
+
 def test_security_headers_on_every_response(client):
     r = client.post("/api/auth/login", json={"username": "x", "password": "y"})
     assert r.headers["x-content-type-options"] == "nosniff"

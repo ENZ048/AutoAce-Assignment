@@ -288,6 +288,37 @@ def test_per_file_failure_isolation_surfaces_in_counts(client, auth_header, tmp_
     assert done["failed_files"] == ["call_bad.wav"]  # live per-file failure marker
 
 
+def test_completed_batch_is_audit_logged_and_survives_delete(
+    client, auth_header, tmp_path, app_env
+):
+    """After a real batch completes, its predictions are in the durable audit
+    log; deleting the batch from the UI must not remove that record."""
+    import json
+
+    from dashboard.config import get_dashboard_settings
+
+    z = make_batch_zip(tmp_path / "b.zip")
+    job = client.post(
+        "/api/jobs",
+        headers=auth_header,
+        files=[("files", ("b.zip", z.read_bytes(), "application/zip"))],
+    ).json()
+    client.post(f"/api/jobs/{job['id']}/start", headers=auth_header)
+    _wait_for(client, auth_header, job["id"], "completed")
+
+    audit_file = get_dashboard_settings().data_dir / "audit.jsonl"
+    before = [json.loads(x) for x in audit_file.read_text().strip().splitlines()]
+    assert {r["file"] for r in before} == {"call_001.wav", "call_002.wav"}
+    assert all(r["job_id"] == job["id"] for r in before)
+
+    r = client.delete(f"/api/jobs/{job['id']}", headers=auth_header)
+    assert r.status_code == 204
+    assert client.get(f"/api/jobs/{job['id']}", headers=auth_header).status_code == 404
+    # the batch is gone from the dashboard, but the audit record persists
+    after = [json.loads(x) for x in audit_file.read_text().strip().splitlines()]
+    assert after == before
+
+
 def test_start_requires_awaiting_confirmation(client, auth_header, tmp_path):
     z = make_batch_zip(tmp_path / "b.zip")
     job = client.post(

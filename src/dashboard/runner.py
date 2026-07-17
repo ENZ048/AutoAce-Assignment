@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dashboard import store
+from dashboard import audit, store
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +123,17 @@ def worker_main(job_id: str, db_path: str, batch_root: str, out_dir: str, stub: 
             store.update_progress(db, job_id, done=0, current_file=None)
             kwargs = {}
         report = run_batch(Path(batch_root), Path(out_dir), progress_cb=progress, **kwargs)
-        already = set(store.get_job(db, job_id)["warnings"])
-        extra = [w for w in report.warnings if w not in already]  # validation warnings repeat
+        row = store.get_job(db, job_id)
+        # Durable, delete-proof audit record of every prediction (best-effort:
+        # data_dir is the parent of the SQLite file). A failure to write the
+        # audit log must never fail an otherwise-completed batch.
+        try:
+            audit.record_batch(Path(db_path).parent, job_id, row["original_name"], report)
+        except Exception:  # noqa: BLE001 — audit is durability, not the critical path
+            logger.exception("job %s: audit log write failed (batch still completes)", job_id)
+        extra = [
+            w for w in report.warnings if w not in set(row["warnings"])
+        ]  # validation warnings repeat
         store.finish(
             db,
             job_id,

@@ -5,7 +5,7 @@ PYTEST := .venv/bin/pytest
 setup:
 	python3.12 -m venv .venv || python3 -m venv .venv
 	$(PIP) install -q -U pip
-	$(PIP) install -q -e ".[dev]"
+	$(PIP) install -q -e ".[web,dev]"
 	@command -v ffmpeg >/dev/null || echo "WARNING: ffmpeg not found on PATH — required at runtime"
 
 test:
@@ -26,3 +26,12 @@ evaluate:
 
 bakeoff:
 	$(PY) -m eval.bakeoff --data data/ --out out/bakeoff.md
+
+webapp-build:  ## build the React SPA into webapp/dist
+	cd webapp && npm install && npm run build
+
+web: webapp-build  ## serve API + built SPA on :8000
+	.venv/bin/uvicorn --factory dashboard.app:create_app --host 0.0.0.0 --port 8000
+
+web-dev:  ## API with reload; pair with `cd webapp && npm run dev` for HMR
+	.venv/bin/uvicorn --factory dashboard.app:create_app --reload --port 8000

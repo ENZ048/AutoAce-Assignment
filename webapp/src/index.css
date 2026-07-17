@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-wash text-body font-body antialiased;
+}
+
+h1, h2, h3 {
+  @apply font-display text-ink;
+}
+
+:focus-visible {
+  @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-wash;
+}
+
+@keyframes queue-pulse {
+  0%, 100% { background-color: rgb(219 234 254); }   /* blue-100 */
+  50% { background-color: rgb(191 219 254); }        /* blue-200 */
+}
+.queue-analyzing { animation: queue-pulse 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

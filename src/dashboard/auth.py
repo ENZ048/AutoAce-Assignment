@@ -18,7 +18,9 @@ def verify_login(username: str, password: str, settings: DashboardSettings) -> b
     if username != settings.admin_user:
         return False
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), settings.admin_password_hash.encode("utf-8"))
+        return bcrypt.checkpw(
+            password.encode("utf-8"), settings.admin_password_hash.encode("utf-8")
+        )
     except ValueError:  # malformed stored hash — treat as auth failure, never a 500
         return False
 

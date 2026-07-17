@@ -27,6 +27,11 @@ def test_verify_login_wrong_password_or_user():
     assert verify_login("intruder", "Right#Pass1", s) is False
 
 
+def test_malformed_stored_hash_is_auth_failure_not_error():
+    s = make_settings(admin_password_hash="not-a-bcrypt-hash")
+    assert verify_login("autoace", "Right#Pass1", s) is False
+
+
 def test_token_roundtrip():
     s = make_settings()
     payload = decode_token(create_token(s), s)

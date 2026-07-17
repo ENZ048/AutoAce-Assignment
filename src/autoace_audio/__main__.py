@@ -20,8 +20,9 @@ def main() -> int:
 
     from autoace_audio.batch import run_batch
 
-    def progress(done: int, total: int, name: str) -> None:
-        print(f"[{done}/{total}] {name}", flush=True)
+    def progress(done: int, total: int, name: str, failed: str | None = None) -> None:
+        suffix = f"  FAILED ({failed})" if failed else ""
+        print(f"[{done}/{total}] {name}{suffix}", flush=True)
 
     try:
         report = run_batch(args.input, args.out, tone_arm=args.arm, progress_cb=progress)

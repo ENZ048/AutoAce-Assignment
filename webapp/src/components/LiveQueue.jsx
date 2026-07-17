@@ -16,11 +16,11 @@ function elapsed(startedAt) {
 }
 
 export default function LiveQueue({ job }) {
-  const rows = buildQueueRows(job.files, job.done, job.total, job.status)
+  const rows = buildQueueRows(job.files, job.done, job.total, job.status, job.failed_files)
   return (
     <section>
       <div className="grid grid-cols-3 gap-3">
-        <Stat value={job.done} label="Analyzed" />
+        <Stat value={job.done} label="Processed" />
         <Stat value={job.total - job.done} label="Remaining" />
         <Stat value={elapsed(job.started_at)} label="Elapsed" />
       </div>
@@ -34,9 +34,10 @@ export default function LiveQueue({ job }) {
             className={`flex items-center justify-between rounded-lg px-3 py-1.5 font-mono text-xs ${
               r.state === 'analyzing' ? 'queue-analyzing text-blue-700'
               : r.state === 'completed' ? 'text-gray-400 line-through decoration-green-700/40'
+              : r.state === 'failed' ? 'text-red-600'
               : 'text-body'}`}>
             <span>{r.name}</span>
-            <span>{r.state === 'completed' ? '✓' : r.state === 'analyzing' ? 'analyzing…' : 'queued'}</span>
+            <span>{r.state === 'completed' ? '✓' : r.state === 'failed' ? '✗ failed' : r.state === 'analyzing' ? 'analyzing…' : 'queued'}</span>
           </li>
         ))}
       </ul>

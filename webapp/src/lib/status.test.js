@@ -26,6 +26,11 @@ describe('status helpers', () => {
     expect(buildQueueRows(files, 3, 3, 'running').map((r) => r.state))
       .toEqual(['completed', 'completed', 'completed'])
   })
+  it('buildQueueRows marks failed files distinctly from completed ones', () => {
+    const files = ['a.wav', 'bad.wav', 'c.wav']
+    expect(buildQueueRows(files, 2, 3, 'running', ['bad.wav']).map((r) => r.state))
+      .toEqual(['completed', 'failed', 'analyzing'])
+  })
   it('buildQueueRows marks every row pending while the job is still queued', () => {
     const files = ['a.wav', 'b.wav', 'c.wav']
     expect(buildQueueRows(files, 0, 3, 'queued').map((r) => r.state))

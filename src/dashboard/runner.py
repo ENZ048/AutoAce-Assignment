@@ -108,8 +108,8 @@ def worker_main(job_id: str, db_path: str, batch_root: str, out_dir: str, stub: 
     try:
         from autoace_audio.batch import run_batch  # imports torch — inside the worker only
 
-        def progress(done: int, total: int, name: str) -> None:
-            store.update_progress(db, job_id, done=done, current_file=name)
+        def progress(done: int, total: int, name: str, failed: str | None = None) -> None:
+            store.update_progress(db, job_id, done=done, current_file=name, failed=failed)
 
         kwargs = {"analyze_fn": stub_analyze} if stub else {}
         report = run_batch(Path(batch_root), Path(out_dir), progress_cb=progress, **kwargs)

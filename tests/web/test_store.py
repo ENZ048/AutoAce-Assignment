@@ -108,6 +108,17 @@ def test_requeue_resets_run_state(db):
     assert job["total"] == 2 and job["warnings"] == ["w"]  # validation facts survive
 
 
+def test_update_progress_accumulates_failed_files_and_requeue_clears_them(db):
+    store.create_job(db, "j1", "b.zip")
+    store.update_progress(db, "j1", done=1, current_file="a.wav")
+    store.update_progress(db, "j1", done=2, current_file="bad.wav", failed="decode: boom")
+    store.update_progress(db, "j1", done=3, current_file="c.wav")
+    job = store.get_job(db, "j1")
+    assert job["failed_files"] == ["bad.wav"]
+    store.requeue(db, "j1")
+    assert store.get_job(db, "j1")["failed_files"] == []
+
+
 def test_requeue_clears_previous_attempts_worker_pid(db):
     """A re-run must not inherit the dead attempt's pid: if the server crashes
     between set_status('running') and set_worker_pid, a stale pid that the OS

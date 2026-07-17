@@ -228,6 +228,7 @@ def test_per_file_failure_isolation_surfaces_in_counts(client, auth_header, tmp_
     client.post(f"/api/jobs/{job['id']}/start", headers=auth_header)
     done = _wait_for(client, auth_header, job["id"], "completed")
     assert done["results_count"] == 1 and done["errors_count"] == 1
+    assert done["failed_files"] == ["call_bad.wav"]  # live per-file failure marker
 
 
 def test_start_requires_awaiting_confirmation(client, auth_header, tmp_path):

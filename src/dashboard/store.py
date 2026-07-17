@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   finished_at TEXT,
   results_count INTEGER,
   errors_count INTEGER,
-  worker_pid INTEGER
+  worker_pid INTEGER,
+  failed_files TEXT NOT NULL DEFAULT '[]'
 );
 """
 
@@ -41,6 +42,10 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(_SCHEMA)
+    # Additive migration for DBs created before failed_files existed.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+    if "failed_files" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN failed_files TEXT NOT NULL DEFAULT '[]'")
     return conn
 
 
@@ -49,6 +54,7 @@ def _to_dict(row: sqlite3.Row | None) -> dict | None:
         return None
     d = dict(row)
     d["warnings"] = json.loads(d["warnings"])
+    d["failed_files"] = json.loads(d["failed_files"])
     return d
 
 
@@ -92,10 +98,26 @@ def set_validation(db: sqlite3.Connection, job_id: str, total: int, warnings: li
     )
 
 
-def update_progress(db: sqlite3.Connection, job_id: str, done: int, current_file: str) -> None:
+def update_progress(
+    db: sqlite3.Connection,
+    job_id: str,
+    done: int,
+    current_file: str,
+    failed: str | None = None,
+) -> None:
     db.execute(
         "UPDATE jobs SET done = ?, current_file = ? WHERE id = ?", (done, current_file, job_id)
     )
+    if failed:
+        # The worker is the sole writer of failed_files, so read-modify-write is safe.
+        row = db.execute("SELECT failed_files FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is not None:
+            names = json.loads(row["failed_files"])
+            if current_file not in names:
+                names.append(current_file)
+                db.execute(
+                    "UPDATE jobs SET failed_files = ? WHERE id = ?", (json.dumps(names), job_id)
+                )
 
 
 def finish(
@@ -131,7 +153,8 @@ def requeue(db: sqlite3.Connection, job_id: str) -> None:
     db.execute(
         "UPDATE jobs SET status = 'queued', done = 0, current_file = NULL, error = NULL, "
         "started_at = NULL, finished_at = NULL, results_count = NULL, errors_count = NULL, "
-        "worker_pid = NULL "  # a re-run must never inherit the dead attempt's (reusable) pid
+        "worker_pid = NULL, "  # a re-run must never inherit the dead attempt's (reusable) pid
+        "failed_files = '[]' "
         "WHERE id = ?",
         (job_id,),
     )

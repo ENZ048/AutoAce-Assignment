@@ -94,7 +94,7 @@ def run_batch(
     out_dir: Path,
     tone_arm: str | None = None,
     analyze_fn: Callable[[Path, str | None], PipelineOutput] = analyze,
-    progress_cb: Callable[[int, int, str], None] | None = None,
+    progress_cb: Callable[[int, int, str, str | None], None] | None = None,
 ) -> BatchReport:
     input_dir, temp_dir = _unzip_if_needed(Path(input_path))
     try:
@@ -104,17 +104,22 @@ def run_batch(
         # shape stays exactly what it was; we only need a count out of it below.
         tone_fallback_count = 0
         for i, path in enumerate(files):
+            failed: str | None = None
             try:
                 out = analyze_fn(path, tone_arm=tone_arm)
                 report.results[path.name] = out.result
                 if out.diagnostics.get("tone_error"):
                     tone_fallback_count += 1
             except DecodeError as e:
-                report.errors.append(FileError(name=path.name, error=f"decode: {e}"))
+                failed = f"decode: {e}"
+                report.errors.append(FileError(name=path.name, error=failed))
             except Exception as e:  # noqa: BLE001 — isolation is the contract
-                report.errors.append(FileError(name=path.name, error=f"{type(e).__name__}: {e}"))
+                failed = f"{type(e).__name__}: {e}"
+                report.errors.append(FileError(name=path.name, error=failed))
             if progress_cb:
-                progress_cb(i + 1, len(files), path.name)
+                # failed rides along so live consumers can distinguish a failed
+                # file from a successful one before the final error report.
+                progress_cb(i + 1, len(files), path.name, failed)
         if tone_fallback_count > 0:
             # A silent whole-batch tone downgrade (every fallback is a per-file
             # tone-arm miss) must be visible at the report level, not just buried

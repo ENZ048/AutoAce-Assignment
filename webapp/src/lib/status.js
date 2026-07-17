@@ -19,14 +19,18 @@ export const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString() : '—')
 // status is job.status: while a job is only 'queued' (not yet started), no file has
 // been picked up yet, so every row must read as pending — 'done' can lag behind a
 // stale re-render of a job that hasn't actually started processing.
-export const buildQueueRows = (files, done, total, status) =>
+// 'done' counts every processed file including failures, so failedFiles (from the
+// worker) is what distinguishes a failed row from a completed one mid-run.
+export const buildQueueRows = (files, done, total, status, failedFiles = []) =>
   files.map((name, i) => ({
     name,
     state:
       status === 'queued'
         ? 'pending'
         : i < done
-          ? 'completed'
+          ? failedFiles.includes(name)
+            ? 'failed'
+            : 'completed'
           : i === done && done < total
             ? 'analyzing'
             : 'pending',

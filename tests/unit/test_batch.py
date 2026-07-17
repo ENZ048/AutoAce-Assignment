@@ -144,6 +144,26 @@ def test_temp_dir_cleanup_after_run_batch(tmp_path):
     assert not Path(created_dirs[0]).exists()
 
 
+def test_progress_cb_reports_per_file_failure(tmp_path):
+    """The live progress consumer must be able to tell a failed file from a
+    successful one — otherwise a UI can only render every processed file as
+    succeeded until the final error report."""
+    d = _mkbatch(
+        tmp_path,
+        ["good.wav", "corrupt.wav"],
+        [["good.wav", ""], ["corrupt.wav", ""]],
+    )
+    seen = {}
+    run_batch(
+        d,
+        tmp_path / "out",
+        analyze_fn=_fake_analyze,
+        progress_cb=lambda done, total, name, failed: seen.update({name: failed}),
+    )
+    assert seen["good.wav"] is None
+    assert seen["corrupt.wav"] is not None and "decode" in seen["corrupt.wav"]
+
+
 def test_finder_zip_macosx_junk_does_not_defeat_root_resolution(tmp_path):
     """macOS Finder zips carry __MACOSX/ and .DS_Store alongside the payload
     folder; they must not stop the single payload subdir from becoming the

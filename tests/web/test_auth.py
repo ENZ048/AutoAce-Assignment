@@ -11,7 +11,7 @@ def make_settings(**over):
     base = dict(
         admin_user="autoace",
         admin_password_hash=make_hash("Right#Pass1"),
-        jwt_secret="test-secret",
+        jwt_secret="test-secret-0123456789abcdef-pad-to-32b",
     )
     base.update(over)
     return DashboardSettings(**base)
@@ -51,6 +51,8 @@ def test_garbage_and_wrong_secret_rejected():
     s = make_settings()
     assert decode_token("not.a.token", s) is None
     other = pyjwt.encode(
-        {"sub": "autoace", "exp": int(time.time()) + 600}, "other-secret", algorithm="HS256"
+        {"sub": "autoace", "exp": int(time.time()) + 600},
+        "other-secret-0123456789abcdef-pad-32b",
+        algorithm="HS256",
     )
     assert decode_token(other, s) is None

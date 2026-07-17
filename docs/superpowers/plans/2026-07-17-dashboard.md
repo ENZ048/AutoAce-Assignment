@@ -791,7 +791,7 @@ PASSWORD_HASH = make_hash(PASSWORD)  # once per session — bcrypt is deliberate
 def app_env(monkeypatch, tmp_path):
     monkeypatch.setenv("DASHBOARD_ADMIN_USER", "autoace")
     monkeypatch.setenv("DASHBOARD_ADMIN_PASSWORD_HASH", PASSWORD_HASH)
-    monkeypatch.setenv("DASHBOARD_JWT_SECRET", "test-secret")
+    monkeypatch.setenv("DASHBOARD_JWT_SECRET", "test-secret-0123456789abcdef-pad-to-32b")
     monkeypatch.setenv("DASHBOARD_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("DASHBOARD_STUB_ANALYZE", "1")
     clear_settings_cache()

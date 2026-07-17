@@ -20,7 +20,7 @@ function Chip({ value }) {
   )
 }
 
-const Muted = () => <span className="text-xs text-gray-300">—</span>
+const Muted = () => <span className="text-xs text-gray-400">—</span>
 
 const Bool = ({ value }) =>
   value ? <span className="text-sm font-bold leading-none text-green-600">✓</span> : <Muted />
@@ -40,20 +40,20 @@ function ConfidenceCell({ value }) {
 // chips for enums, centered green checks for booleans, a meter for confidence.
 const COLUMNS = [
   { label: 'file', cell: (r) => <span className="whitespace-nowrap font-mono text-xs text-ink">{r.name}</span> },
-  { label: 'emotional tone', cell: (r) => <Chip value={r.emotional_tone} /> },
-  { label: 'emotional intensity', cell: (r) => <Chip value={r.emotional_intensity} /> },
-  { label: 'background noise present', center: true, cell: (r) => <Bool value={r.background_noise_present} /> },
+  { label: 'tone', cell: (r) => <Chip value={r.emotional_tone} /> },
+  { label: 'intensity', cell: (r) => <Chip value={r.emotional_intensity} /> },
+  { label: 'noise', center: true, cell: (r) => <Bool value={r.background_noise_present} /> },
   {
-    label: 'background noise type',
+    label: 'noise type',
     cell: (r) =>
       r.background_noise_type
         ? <span className="whitespace-nowrap font-mono text-xs text-ink">{r.background_noise_type}</span>
         : <Muted />,
   },
-  { label: 'background noise severity', cell: (r) => <Chip value={r.background_noise_severity} /> },
-  { label: 'audio quality', cell: (r) => <Chip value={r.audio_quality} /> },
-  { label: 'speaker overlap present', center: true, cell: (r) => <Bool value={r.speaker_overlap_present} /> },
-  { label: 'long silence present', center: true, cell: (r) => <Bool value={r.long_silence_present} /> },
+  { label: 'severity', cell: (r) => <Chip value={r.background_noise_severity} /> },
+  { label: 'quality', cell: (r) => <Chip value={r.audio_quality} /> },
+  { label: 'overlap', center: true, cell: (r) => <Bool value={r.speaker_overlap_present} /> },
+  { label: 'long silence', center: true, cell: (r) => <Bool value={r.long_silence_present} /> },
   { label: 'confidence', right: true, cell: (r) => <ConfidenceCell value={r.confidence} /> },
 ]
 
@@ -136,7 +136,7 @@ export default function ResultsSection({ job }) {
             <tr className="border-b border-gray-200">
               {COLUMNS.map((c) => (
                 <th key={c.label}
-                  className={`px-4 py-3 align-bottom text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 ${c.right ? 'text-right' : c.center ? 'text-center' : ''}`}>
+                  className={`whitespace-nowrap px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600 ${c.right ? 'text-right' : c.center ? 'text-center' : ''}`}>
                   {c.label}
                 </th>
               ))}

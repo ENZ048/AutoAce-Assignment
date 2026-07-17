@@ -27,3 +27,23 @@ def test_response_schema_enums_match_brief():
         "background_noise_type",
         "speaker_overlap_present",
     }
+
+
+def test_client_is_constructed_with_hard_timeout(monkeypatch):
+    """A single pathological clip must never wedge a batch: the client carries a
+    bounded per-request timeout (stress-batch finding, 2026-07-17)."""
+    import google.genai as genai
+
+    from autoace_audio.analyzers.tone.gemini_tone import _make_client
+    from autoace_audio.config import Settings
+
+    captured = {}
+
+    def fake_client(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(genai, "Client", fake_client)
+    s = Settings(_env_file=None, gemini_api_key="test-key", gemini_timeout_s=60.0)
+    _make_client(s)
+    assert captured["http_options"] == {"timeout": 60000}

@@ -74,14 +74,26 @@ _MAX_ATTEMPTS = 3  # retries for transient network/API errors only (never for a
 _BACKOFF_BASE_S = 2  # exponential backoff: attempt 0/1/2 -> sleep 1s/2s/4s.
 
 
+def _make_client(s):  # noqa: ANN001, ANN202 — Settings; returns genai.Client (deferred import)
+    """Client with a hard per-request timeout. Without it, one pathological clip can
+    wedge an entire batch indefinitely (found via adversarial stress batch: a 0.5s
+    blip hung the CLI for 25+ minutes). A bounded timeout converts a stall into
+    ToneClassifierError -> the pipeline's existing local-fallback path."""
+    from google import genai
+
+    return genai.Client(
+        api_key=s.gemini_api_key,
+        http_options={"timeout": int(s.gemini_timeout_s * 1000)},  # SDK takes ms
+    )
+
+
 def classify(samples: np.ndarray, sr: int, vad: VadMap, snr_db: float | None) -> ToneResult:
     s = get_settings()
     if not s.gemini_api_key:
         raise ToneClassifierError("GEMINI_API_KEY not configured")
-    from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=s.gemini_api_key)
+    client = _make_client(s)
     blob = encode_opus_ogg(samples, sr)
     prompt = build_prompt(samples.size / sr, snr_db, vad.speech_ratio)
     last_err: Exception | None = None

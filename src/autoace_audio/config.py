@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     # --- API keys / models ---
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.1-flash-lite"  # verified available; ~$0.0011-0.0016/audio-min
+    # Hard per-request HTTP timeout. Without one, a single pathological clip wedged a
+    # batch for 25+ min (stress-batch finding, 2026-07-17): the SDK default is unbounded.
+    # 60s >> p99 observed latency (~5s); 3 attempts x 60s caps worst-case per clip at
+    # ~3.5min before the local tone fallback takes over.
+    gemini_timeout_s: float = 60.0
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"  # Arm C bake-off only
     tone_arm: str = "gemini"  # gemini | dimensional | transcript

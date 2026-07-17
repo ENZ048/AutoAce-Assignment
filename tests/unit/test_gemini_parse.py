@@ -23,7 +23,7 @@ class _FakeModels:
 
 
 class _FakeClient:
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, **kwargs):  # tolerate client kwargs (http_options etc.)
         self.models = _FakeModels()
 
 

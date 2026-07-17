@@ -1,4 +1,5 @@
-import { buildQueueRows, isPreloading } from '../lib/status'
+import { useEffect, useState } from 'react'
+import { buildQueueRows, isActive, isPreloading } from '../lib/status'
 
 function Stat({ value, label }) {
   return (
@@ -16,6 +17,15 @@ function elapsed(startedAt) {
 }
 
 export default function LiveQueue({ job }) {
+  // Elapsed is derived from started_at at render time; without a local 1s
+  // tick it only re-renders when a poll lands (every 2s) and jumps by 2.
+  const [, setTick] = useState(0)
+  const running = isActive(job.status)
+  useEffect(() => {
+    if (!running) return undefined
+    const t = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [running])
   const preloading = isPreloading(job)
   // While models load, no file is being analyzed yet — every row reads pending.
   const rows = buildQueueRows(job.files, job.done, job.total, preloading ? 'queued' : job.status, job.failed_files)
@@ -40,11 +50,14 @@ export default function LiveQueue({ job }) {
           <li key={r.name}
             className={`flex items-center justify-between rounded-lg px-3 py-1.5 font-mono text-xs ${
               r.state === 'analyzing' ? 'queue-analyzing text-blue-700'
-              : r.state === 'completed' ? 'text-gray-400 line-through decoration-green-700/40'
+              : r.state === 'completed' ? 'text-gray-400'
               : r.state === 'failed' ? 'text-red-600'
               : 'text-body'}`}>
-            <span>{r.name}</span>
-            <span>{r.state === 'completed' ? '✓' : r.state === 'failed' ? '✗ failed' : r.state === 'analyzing' ? 'analyzing…' : 'queued'}</span>
+            {/* strike only the filename — never the status marker */}
+            <span className={r.state === 'completed' ? 'line-through decoration-green-700/40' : ''}>{r.name}</span>
+            {r.state === 'completed'
+              ? <span className="text-sm font-semibold text-green-600" aria-label="completed">✓</span>
+              : <span>{r.state === 'failed' ? '✗ failed' : r.state === 'analyzing' ? 'analyzing…' : 'queued'}</span>}
           </li>
         ))}
       </ul>

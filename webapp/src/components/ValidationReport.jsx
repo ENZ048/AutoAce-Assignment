@@ -1,4 +1,4 @@
-export default function ValidationReport({ job, onStart, onDiscard }) {
+export default function ValidationReport({ job, onStart, onDiscard, disabled }) {
   const hasManifest = !job.warnings.some((w) => w.includes('no CSV manifest found'))
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-6">
@@ -20,12 +20,12 @@ export default function ValidationReport({ job, onStart, onDiscard }) {
         Nothing has been processed yet. Review the report, then start the analysis.
       </p>
       <div className="mt-4 flex gap-3">
-        <button onClick={onStart}
-          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white">
+        <button onClick={onStart} disabled={disabled}
+          className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
           Start processing
         </button>
-        <button onClick={onDiscard}
-          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-ink">
+        <button onClick={onDiscard} disabled={disabled}
+          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-ink disabled:opacity-60">
           Discard batch
         </button>
       </div>

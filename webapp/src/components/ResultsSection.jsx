@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 import { downloadArtifact, getErrors, getResults } from '../api'
 
 const FIELDS = ['emotional_tone', 'emotional_intensity', 'background_noise_present',
@@ -30,9 +31,16 @@ export default function ResultsSection({ job }) {
   const [filter, setFilter] = useState('')
 
   useEffect(() => {
-    getResults(job.id).then(setRows).catch(() => {})
-    getErrors(job.id).then(setErrors).catch(() => {})
-  }, [job.id])
+    // Keyed on finished_at too: same job id can complete more than once (re-run),
+    // and this section only mounts for completed jobs — a fetch failure here is a
+    // real problem, not an expected in-progress 409, so it gets a toast, not silence.
+    let alive = true
+    getResults(job.id).then((r) => { if (alive) setRows(r) })
+      .catch((e) => { if (alive) toast.error(e.response?.data?.detail ?? 'Could not load results') })
+    getErrors(job.id).then((e) => { if (alive) setErrors(e) })
+      .catch((e) => { if (alive) toast.error(e.response?.data?.detail ?? 'Could not load errors') })
+    return () => { alive = false }
+  }, [job.id, job.finished_at])
 
   const shown = rows.filter((r) => r.name.toLowerCase().includes(filter.toLowerCase()))
 

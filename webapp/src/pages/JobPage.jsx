@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteJob, getJob, rerunJob, startJob } from '../api'
@@ -13,24 +13,65 @@ export default function JobPage() {
   const navigate = useNavigate()
   const [job, setJob] = useState(null)
   const [missing, setMissing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [pollNonce, setPollNonce] = useState(0)
+  // Mirrors the latest known job status outside React state so the interval tick
+  // (a plain callback, not a state updater) can decide whether to poll without
+  // causing a network side effect from inside setJob. stoppedRef latches true on a
+  // confirmed 404 so a deleted/nonexistent id is never polled again.
+  const statusRef = useRef(null)
+  const stoppedRef = useRef(false)
 
   const refresh = useCallback(() =>
-    getJob(id).then(setJob).catch((e) => e.response?.status === 404 && setMissing(true)), [id])
+    getJob(id).then((j) => {
+      statusRef.current = j.status
+      setJob(j)
+    }).catch((e) => {
+      if (e.response?.status === 404) {
+        stoppedRef.current = true
+        setMissing(true)
+      }
+    }), [id])
+
+  // React Router keeps this component mounted across a `:id` change (no remount),
+  // so the previous job's data and 404 flag would otherwise leak into the new url —
+  // a live job could render as "no longer exists", or briefly show stale content.
+  useEffect(() => {
+    setJob(null)
+    setMissing(false)
+  }, [id])
 
   useEffect(() => {
+    statusRef.current = null
+    stoppedRef.current = false
     refresh()
     const t = setInterval(() => {
-      setJob((j) => { if (!j || isActive(j.status)) refresh(); return j })
+      if (stoppedRef.current) return
+      if (statusRef.current === null || isActive(statusRef.current)) refresh()
     }, 2000)
     return () => clearInterval(t)
-  }, [refresh])
+  }, [refresh, pollNonce])
 
   if (missing) return <Shell><p className="text-sm">This batch no longer exists.</p></Shell>
   if (!job) return <Shell><p className="text-sm">Loading…</p></Shell>
 
-  const act = (fn, okMsg) => () =>
-    fn(job.id).then(() => { okMsg && toast.success(okMsg); refresh() })
-      .catch((e) => toast.error(e.response?.data?.detail ?? 'Action failed'))
+  // Shared by Start / Re-run / Discard: guards re-entry so a fast double-click can't
+  // fire a second concurrent call, and bumping pollNonce on success re-triggers the
+  // polling effect above, which restarts the interval and fetches immediately.
+  const act = (fn, okMsg, onSuccess) => async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await fn(job.id)
+      okMsg && toast.success(okMsg)
+      onSuccess?.()
+    } catch (e) {
+      toast.error(e.response?.data?.detail ?? 'Action failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const restartPolling = () => setPollNonce((n) => n + 1)
 
   return (
     <Shell>
@@ -44,10 +85,11 @@ export default function JobPage() {
         <StatusChip status={job.status} />
       </header>
 
+      {job.status === 'validating' && <p className="text-sm">Validating upload…</p>}
       {job.status === 'awaiting_confirmation' && (
-        <ValidationReport job={job}
-          onStart={act(startJob, 'Batch queued')}
-          onDiscard={() => deleteJob(job.id).then(() => navigate('/'))} />
+        <ValidationReport job={job} disabled={busy}
+          onStart={act(startJob, 'Batch queued', restartPolling)}
+          onDiscard={act(deleteJob, undefined, () => navigate('/'))} />
       )}
       {(job.status === 'queued' || job.status === 'running') && <LiveQueue job={job} />}
       {job.status === 'completed' && <ResultsSection job={job} />}
@@ -59,8 +101,8 @@ export default function JobPage() {
           <p className="mt-2 rounded-lg bg-red-100 px-3 py-2 font-mono text-xs text-red-700">
             {job.error ?? 'No details recorded.'}
           </p>
-          <button onClick={act(rerunJob, 'Batch re-queued')}
-            className="mt-4 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white">
+          <button onClick={act(rerunJob, 'Batch re-queued', restartPolling)} disabled={busy}
+            className="mt-4 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
             Re-run batch
           </button>
         </section>

@@ -56,7 +56,7 @@ export default function LiveQueue({ job }) {
             {/* strike only the filename — never the status marker */}
             <span className={r.state === 'completed' ? 'line-through decoration-green-700/40' : ''}>{r.name}</span>
             {r.state === 'completed'
-              ? <span className="text-sm font-semibold text-green-600" aria-label="completed">✓</span>
+              ? <span className="text-lg font-bold leading-none text-green-600" aria-label="completed">✓</span>
               : <span>{r.state === 'failed' ? '✗ failed' : r.state === 'analyzing' ? 'analyzing…' : 'queued'}</span>}
           </li>
         ))}
@@ -64,9 +64,6 @@ export default function LiveQueue({ job }) {
       {job.status === 'queued' && (
         <p className="mt-2 text-xs">Waiting for the current batch to finish — one batch runs at a time.</p>
       )}
-      <p className="mt-2 text-xs text-gray-400">
-        Safe to close or reload this page — progress is saved on the server.
-      </p>
     </section>
   )
 }

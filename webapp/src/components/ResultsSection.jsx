@@ -102,8 +102,8 @@ export default function ResultsSection({ job }) {
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 bg-white text-xs uppercase tracking-wide shadow-sm">
             <tr>
-              <th className="px-3 py-2">name</th>
-              {FIELDS.map((f) => <th key={f} className="px-3 py-2">{f.replaceAll('_', ' ')}</th>)}
+              <th className="whitespace-nowrap px-3 py-2">name</th>
+              {FIELDS.map((f) => <th key={f} className="whitespace-nowrap px-3 py-2">{f.replaceAll('_', ' ')}</th>)}
             </tr>
           </thead>
           <tbody>

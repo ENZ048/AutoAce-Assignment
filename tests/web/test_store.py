@@ -1,5 +1,3 @@
-import sqlite3
-
 import pytest
 
 from dashboard import store
@@ -74,7 +72,8 @@ def test_two_connections_see_each_other(tmp_path):
     store.create_job(a, "j1", "b.zip")
     store.update_progress(b, "j1", done=1, current_file="x.wav")
     assert store.get_job(a, "j1")["done"] == 1
-    a.close(); b.close()
+    a.close()
+    b.close()
 
 
 def test_finish_on_deleted_job_is_a_noop(db):

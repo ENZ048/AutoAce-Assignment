@@ -3,7 +3,7 @@ writes progress + its own terminal transition. WAL handles the two writers."""
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _SCHEMA = """
@@ -29,7 +29,7 @@ TERMINAL = {"completed", "failed", "interrupted"}
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -68,14 +68,19 @@ def list_jobs(db: sqlite3.Connection) -> list[dict]:
     return [_to_dict(r) for r in rows]
 
 
-def set_status(db: sqlite3.Connection, job_id: str, status: str, *, error: str | None = None) -> None:
+def set_status(
+    db: sqlite3.Connection, job_id: str, status: str, *, error: str | None = None
+) -> None:
     sets, params = ["status = ?"], [status]
     if error is not None:
-        sets.append("error = ?"); params.append(error)
+        sets.append("error = ?")
+        params.append(error)
     if status == "running":
-        sets.append("started_at = ?"); params.append(_now())
+        sets.append("started_at = ?")
+        params.append(_now())
     if status in TERMINAL:
-        sets.append("finished_at = ?"); params.append(_now())
+        sets.append("finished_at = ?")
+        params.append(_now())
     params.append(job_id)
     db.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", params)
 
@@ -94,7 +99,10 @@ def update_progress(db: sqlite3.Connection, job_id: str, done: int, current_file
 
 
 def finish(
-    db: sqlite3.Connection, job_id: str, results_count: int, errors_count: int,
+    db: sqlite3.Connection,
+    job_id: str,
+    results_count: int,
+    errors_count: int,
     extra_warnings: list[str],
 ) -> None:
     row = db.execute("SELECT warnings FROM jobs WHERE id = ?", (job_id,)).fetchone()

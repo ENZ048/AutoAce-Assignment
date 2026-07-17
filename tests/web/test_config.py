@@ -1,6 +1,6 @@
 import pytest
 
-from dashboard.config import DashboardSettings, clear_settings_cache, get_dashboard_settings
+from dashboard.config import clear_settings_cache, get_dashboard_settings
 
 
 def _set_required(monkeypatch):

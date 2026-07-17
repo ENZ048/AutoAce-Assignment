@@ -1,21 +1,35 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
-import { clearToken, listJobs } from '../api'
+import { clearToken, deleteJob, listJobs } from '../api'
 import StatusChip from '../components/StatusChip'
 import UploadCard from '../components/UploadCard'
-import { fmtTime, shortId } from '../lib/status'
+import { fmtTime, isTerminal, shortId } from '../lib/status'
 
 export default function JobsPage() {
   const navigate = useNavigate()
   const [jobs, setJobs] = useState([])
+  const aliveRef = useRef(true)
+
+  const load = useCallback(() =>
+    listJobs().then((j) => { if (aliveRef.current) setJobs(j) }).catch(() => {}), [])
 
   useEffect(() => {
-    let alive = true
-    const load = () => listJobs().then((j) => alive && setJobs(j)).catch(() => {})
+    aliveRef.current = true
     load()
     const t = setInterval(load, 3000)
-    return () => { alive = false; clearInterval(t) }
-  }, [])
+    return () => { aliveRef.current = false; clearInterval(t) }
+  }, [load])
+
+  const handleDelete = async (job) => {
+    if (!window.confirm(`Delete batch "${job.original_name}"? This cannot be undone.`)) return
+    try {
+      await deleteJob(job.id)
+      load()
+    } catch (e) {
+      toast.error(e.response?.data?.detail ?? 'Delete failed')
+    }
+  }
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -57,6 +71,10 @@ export default function JobsPage() {
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => navigate(`/jobs/${j.id}`)}
                       className="font-medium text-accent">Open</button>
+                    {isTerminal(j.status) && (
+                      <button onClick={() => handleDelete(j)}
+                        className="ml-3 font-medium text-red-700">Delete</button>
+                    )}
                   </td>
                 </tr>
               ))}

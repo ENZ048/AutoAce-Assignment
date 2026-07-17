@@ -16,7 +16,7 @@ function elapsed(startedAt) {
 }
 
 export default function LiveQueue({ job }) {
-  const rows = buildQueueRows(job.files, job.done, job.total)
+  const rows = buildQueueRows(job.files, job.done, job.total, job.status)
   return (
     <section>
       <div className="grid grid-cols-3 gap-3">

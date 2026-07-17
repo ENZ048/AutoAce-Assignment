@@ -20,44 +20,10 @@ function Chip({ value }) {
   )
 }
 
-const Muted = ({ children }) => <span className="text-xs text-gray-300">{children}</span>
+const Muted = () => <span className="text-xs text-gray-300">—</span>
 
-// The 9-field schema, grouped for reading: tone+intensity together, the three
-// noise fields as one story, the two boolean flags as pills. Downloads keep
-// the flat per-field schema untouched.
-function ToneCell({ r }) {
-  return (
-    <div className="flex items-center gap-2">
-      <Chip value={r.emotional_tone} />
-      <span className="text-[11px] uppercase tracking-wide text-gray-400">{r.emotional_intensity}</span>
-    </div>
-  )
-}
-
-function NoiseCell({ r }) {
-  if (!r.background_noise_present) return <Muted>none detected</Muted>
-  return (
-    <div className="flex items-center gap-2">
-      <span className="font-mono text-xs text-ink">{r.background_noise_type || 'unidentified'}</span>
-      <Chip value={r.background_noise_severity} />
-    </div>
-  )
-}
-
-function FlagsCell({ r }) {
-  const flags = [
-    r.speaker_overlap_present && 'overlap',
-    r.long_silence_present && 'long silence',
-  ].filter(Boolean)
-  if (!flags.length) return <Muted>none</Muted>
-  return (
-    <div className="flex flex-wrap gap-1">
-      {flags.map((f) => (
-        <span key={f} className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{f}</span>
-      ))}
-    </div>
-  )
-}
+const Bool = ({ value }) =>
+  value ? <span className="text-sm font-bold leading-none text-green-600">✓</span> : <Muted />
 
 function ConfidenceCell({ value }) {
   return (
@@ -70,12 +36,24 @@ function ConfidenceCell({ value }) {
   )
 }
 
+// One column per schema field (the flat 9-field contract), styled for reading:
+// chips for enums, centered green checks for booleans, a meter for confidence.
 const COLUMNS = [
   { label: 'file', cell: (r) => <span className="whitespace-nowrap font-mono text-xs text-ink">{r.name}</span> },
-  { label: 'tone', cell: (r) => <ToneCell r={r} /> },
-  { label: 'background noise', cell: (r) => <NoiseCell r={r} /> },
+  { label: 'emotional tone', cell: (r) => <Chip value={r.emotional_tone} /> },
+  { label: 'emotional intensity', cell: (r) => <Chip value={r.emotional_intensity} /> },
+  { label: 'background noise present', center: true, cell: (r) => <Bool value={r.background_noise_present} /> },
+  {
+    label: 'background noise type',
+    cell: (r) =>
+      r.background_noise_type
+        ? <span className="whitespace-nowrap font-mono text-xs text-ink">{r.background_noise_type}</span>
+        : <Muted />,
+  },
+  { label: 'background noise severity', cell: (r) => <Chip value={r.background_noise_severity} /> },
   { label: 'audio quality', cell: (r) => <Chip value={r.audio_quality} /> },
-  { label: 'flags', cell: (r) => <FlagsCell r={r} /> },
+  { label: 'speaker overlap present', center: true, cell: (r) => <Bool value={r.speaker_overlap_present} /> },
+  { label: 'long silence present', center: true, cell: (r) => <Bool value={r.long_silence_present} /> },
   { label: 'confidence', right: true, cell: (r) => <ConfidenceCell value={r.confidence} /> },
 ]
 
@@ -158,7 +136,7 @@ export default function ResultsSection({ job }) {
             <tr className="border-b border-gray-200">
               {COLUMNS.map((c) => (
                 <th key={c.label}
-                  className={`whitespace-nowrap px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 ${c.right ? 'text-right' : ''}`}>
+                  className={`px-4 py-3 align-bottom text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 ${c.right ? 'text-right' : c.center ? 'text-center' : ''}`}>
                   {c.label}
                 </th>
               ))}
@@ -168,7 +146,7 @@ export default function ResultsSection({ job }) {
             {shown.map((r) => (
               <tr key={r.name} className="border-t border-gray-100 transition-colors first:border-t-0 hover:bg-wash/60">
                 {COLUMNS.map((c) => (
-                  <td key={c.label} className={`px-4 py-3 ${c.right ? 'text-right' : ''}`}>{c.cell(r)}</td>
+                  <td key={c.label} className={`px-4 py-3 ${c.right ? 'text-right' : c.center ? 'text-center' : ''}`}>{c.cell(r)}</td>
                 ))}
               </tr>
             ))}

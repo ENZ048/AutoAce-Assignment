@@ -1,11 +1,13 @@
 import json
 
 import pytest
+from eval.experiments import common
 from eval.experiments.common import (
     BudgetExceeded,
     SpendGuard,
     field_compare,
     gemini_cost,
+    log_run,
     wins_field,
 )
 
@@ -50,3 +52,19 @@ def test_wins_field_requires_2of3_flip():
     # baseline already mostly right -> no win even if lever is right
     base_ok = _runs([True, True, False])
     assert wins_field(base_ok, good, "emotional_tone", "call_002.ogg") is False
+
+
+def test_log_run_without_cost_usd_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(common, "OUT_DIR", tmp_path)
+    with pytest.raises(ValueError, match="every run log must carry its measured cost"):
+        log_run("test_exp", 0, {"some": "payload"})
+
+
+def test_spend_guard_warn_does_not_raise(tmp_path, capsys):
+    state = tmp_path / "spend.json"
+    g = SpendGuard(state_path=state, cap_usd=10.0, warn_usd=7.0)
+    g.add(6.0)
+    g.check(1.5)  # 6.0 + 1.5 = 7.5 > 7.0 warns, but < 10.0 does not raise
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+    assert "7.50" in captured.out

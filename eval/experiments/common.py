@@ -6,6 +6,8 @@ shipping config or fusion."""
 
 import csv
 import json
+import os
+import tempfile
 from pathlib import Path
 
 ANCHORS = ["call_001.ogg", "call_002.ogg", "call_003.ogg"]
@@ -43,7 +45,10 @@ class SpendGuard:
     def add(self, cost_usd: float) -> None:
         total = self.total() + float(cost_usd)
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps({"total_usd": total}))
+        with tempfile.NamedTemporaryFile(mode="w", dir=self.state_path.parent, delete=False) as f:
+            f.write(json.dumps({"total_usd": total}))
+            temp_path = f.name
+        os.replace(temp_path, self.state_path)
 
     def check(self, projected_usd: float) -> None:
         projected_total = self.total() + float(projected_usd)
@@ -76,7 +81,8 @@ def load_truth(labels_path: Path = DATA_DIR / "labels.csv") -> dict[str, dict]:
 
 
 def log_run(exp: str, run_idx: int, payload: dict) -> Path:
-    assert "cost_usd" in payload, "every run log must carry its measured cost"
+    if "cost_usd" not in payload:
+        raise ValueError("every run log must carry its measured cost")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / f"{exp}_run{run_idx}.json"
     path.write_text(json.dumps(payload, indent=2, default=str))
@@ -84,7 +90,12 @@ def log_run(exp: str, run_idx: int, payload: dict) -> Path:
 
 
 def read_runs(exp: str) -> list[dict]:
-    return [json.loads(p.read_text()) for p in sorted(OUT_DIR.glob(f"{exp}_run*.json"))]
+    def run_index(p: Path) -> int:
+        return int(p.stem.split("_run")[1])
+
+    return [
+        json.loads(p.read_text()) for p in sorted(OUT_DIR.glob(f"{exp}_run*.json"), key=run_index)
+    ]
 
 
 def field_compare(pred: dict, truth: dict, fields: list[str]) -> dict[str, bool]:

@@ -20,7 +20,8 @@ def test_settings_load_from_env(monkeypatch, tmp_path):
     assert str(s.data_dir) == str(tmp_path)
 
 
-def test_missing_required_key_fails_fast(monkeypatch):
+def test_missing_required_key_fails_fast(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DASHBOARD_ADMIN_USER", raising=False)
     monkeypatch.setenv("DASHBOARD_ADMIN_PASSWORD_HASH", "$2b$12$abcdefghijklmnopqrstuv")
     monkeypatch.setenv("DASHBOARD_JWT_SECRET", "s3cret")

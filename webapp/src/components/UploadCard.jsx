@@ -8,6 +8,7 @@ export default function UploadCard({ onCreated }) {
   const [progress, setProgress] = useState(null) // null | 0..100
 
   const send = async (files) => {
+    if (progress !== null) return
     if (!files.length) return
     const form = new FormData()
     for (const f of files) form.append('files', f, f.name)
@@ -45,9 +46,9 @@ export default function UploadCard({ onCreated }) {
             Choose folder
           </button>
           <input ref={zipRef} type="file" accept=".zip" hidden
-            onChange={(e) => send([...e.target.files])} />
+            onChange={(e) => { const picked = [...e.target.files]; e.target.value = ''; send(picked) }} />
           <input ref={folderRef} type="file" webkitdirectory="" hidden
-            onChange={(e) => send([...e.target.files])} />
+            onChange={(e) => { const picked = [...e.target.files]; e.target.value = ''; send(picked) }} />
         </div>
       ) : (
         <div className="mx-auto mt-4 max-w-md">

@@ -133,10 +133,10 @@ export default function ResultsSection({ job }) {
       <div className="max-h-[32rem] overflow-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
-            <tr className="border-b border-gray-200">
+            <tr>
               {COLUMNS.map((c) => (
                 <th key={c.label}
-                  className="whitespace-nowrap px-4 py-3 text-center align-middle text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600">
+                  className="whitespace-nowrap border border-gray-200 px-4 py-3 text-center align-middle text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600">
                   {c.label}
                 </th>
               ))}
@@ -144,9 +144,9 @@ export default function ResultsSection({ job }) {
           </thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={r.name} className="border-t border-gray-100 transition-colors first:border-t-0 hover:bg-wash/60">
+              <tr key={r.name} className="transition-colors hover:bg-wash/60">
                 {COLUMNS.map((c) => (
-                  <td key={c.label} className="px-4 py-3 text-center align-middle">{c.cell(r)}</td>
+                  <td key={c.label} className="border border-gray-200 px-4 py-3 text-center align-middle">{c.cell(r)}</td>
                 ))}
               </tr>
             ))}

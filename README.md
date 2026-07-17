@@ -1,12 +1,21 @@
 # AutoAce Call-Audio Analysis
 
-Analyzes production call audio into a structured 9-field JSON: emotional tone,
-background noise, technical quality, speaker overlap, long silences,
-confidence. Built per `docs/superpowers/specs/2026-07-16-autoace-backend-design.md`;
-every calibration/threshold decision behind the numbers in this README is
-recorded with its measurement in `docs/decisions.md`.
+Analyzes production call audio into a structured 9-field JSON per call:
+emotional tone and intensity, background noise (present / type / severity),
+audio quality, speaker overlap, long silences, and a confidence score.
 
-## Quickstart
+- **Live dashboard:** https://autoace.aixcoach.in — login, ZIP/folder batch
+  upload, validation before processing, live per-file progress, and CSV/JSON
+  downloads. (Credentials supplied separately.)
+- **Technical memo:** [docs/technical-memo.md](docs/technical-memo.md) — the
+  one-page deliverable summary: accuracy (with confusion matrix), measured
+  cost and latency, the budget-vs-accuracy study, limitations, and roadmap.
+  **Start here for the results.**
+
+Every calibration and threshold decision behind the numbers below is recorded
+with its measurement in [docs/decisions.md](docs/decisions.md).
+
+## Quickstart (CLI)
 
     make setup
     cp .env.example .env   # add GEMINI_API_KEY (paid tier — free tier trains on your audio)
@@ -14,9 +23,8 @@ recorded with its measurement in `docs/decisions.md`.
 
 `make setup` creates `.venv`, installs the package + dev deps, and warns if
 `ffmpeg` is missing from `PATH` (required at runtime — audio format is
-detected from file content via ffprobe, never from the filename extension,
-since our own production smoke set contains `.mp3`-named files that are PCM
-WAVs inside).
+detected from file *content* via ffprobe, never from the filename extension,
+since some source files are `.mp3`-named but PCM WAV inside).
 
 ## Architecture
 
@@ -47,7 +55,7 @@ typed, frozen dataclass; models load lazily and cache as module singletons so
 a batch run only pays model-load cost once. All thresholds live in
 `config.py` with a calibration rationale comment next to each value.
 
-## Tone arm bake-off (live, n=3 labeled calls)
+## Tone-arm bake-off (live, n=3 labeled calls)
 
 Three swappable tone-classification arms sit behind one interface
 (`classify_tone(arm, samples, sr, vad, snr_db)`); the pipeline ships the
@@ -55,29 +63,23 @@ bake-off winner as the default, selectable via `--arm`.
 
 | arm | tone acc | macro F1 | $ / audio-min | proc s / audio-min |
 |---|---|---|---|---|
-| **gemini** (shipped default) | 67% | 0.667 | $0.00146 | 7.3/min |
-| dimensional (audeering wav2vec2, local, zero-cost) | 0% | 0.000 | $0 | 6.0/min |
-| transcript (faster-whisper local → OpenAI text) | 0% | 0.000 | $0.00065 | 12.1/min |
+| **gemini** (shipped default) | 2/3 | 0.667 | $0.00146 | 7.3/min |
+| dimensional (audeering wav2vec2, local, zero-cost) | 0/3 | 0.000 | $0 | 6.0/min |
+| transcript (faster-whisper local → OpenAI text) | 0/3 | 0.000 | $0.00065 | 12.1/min |
 
-Winner: **gemini**, unambiguously (67% vs 0%/0% on this sample). Its one miss
-(of 3) is `call_002.ogg`: predicted `frustrated`, labeled `neutral` — the
-model anchors on a single Spanish profanity phrase as frustration evidence
-despite the model's own rationale acknowledging the rest of the call is calm;
-4 prompt-wording iterations did not change this outcome (full trail in
-`docs/decisions.md`, treated as a genuine model-prior limit / possible label
-disagreement, not iterated further). `dimensional` and `transcript` scoring
-0/3 is real (not a code bug) and consistent with each arm's own documented
-limitations (dimensional: no diarization, hears agent+customer speech mixed;
-transcript: text-only, loses all prosody).
+Winner: **gemini**. Its one miss (of 3) is `call_002.ogg`: predicted
+`frustrated`, labeled `neutral` — the model anchors on a single Spanish
+profanity phrase as frustration evidence despite its own rationale
+acknowledging the rest of the call is calm; four prompt-wording iterations did
+not change this outcome (full trail in `docs/decisions.md`, treated as a
+genuine model-prior limit / possible label disagreement). The `dimensional`
+and `transcript` arms scoring 0/3 is real, not a code bug, and consistent with
+each arm's documented limits (dimensional: no diarization, hears agent +
+customer mixed; transcript: text-only, loses all prosody).
 
-**n=3 is a very small sample** — each arm's accuracy/F1 swings hard on a
-single clip. Read this table as directional evidence that gemini is the right
-default, not as a statistically powered comparison. (An earlier run of the
-same 3 calls measured slightly different proc-time figures — 9.6/12.5/16.7
-s/audio-min instead of 7.3/6.0/12.1 — with identical accuracy, F1, and
-predicted labels; that's normal live-API-latency/local-model wall-clock
-wobble across repeated runs, not a code change. Both are recorded in
-`docs/decisions.md`.)
+**n=3 is a very small sample** — each arm's accuracy swings hard on a single
+clip. Read this table as directional evidence that gemini is the right
+default, not a statistically powered comparison.
 
 ## Cost model
 
@@ -86,8 +88,8 @@ audio-minute** (33–50% under ceiling).
 
 | component | basis | $ / audio-min |
 |---|---|---|
-| Gemini audio input (32 tok/s × 60s/min ≈ 1920 tok/min @ $0.50/M) + output tokens + fixed prompt-text overhead | measured on 3 real calls (task 8): prompt tokens 1509–5035, output 99–107, scaling with clip duration | $0.0011–0.0016 |
-| Local layer (silero VAD + PANNs CNN14 AED + SQUIM + dimensional/transcript, amortized CPU) | measured on the eval box | $0.0002–0.0005 |
+| Gemini audio input (~1920 tok/min @ $0.50/M) + output tokens + fixed prompt overhead | measured on 3 real calls: prompt tokens 1509–5035, output 99–107, scaling with clip duration | $0.0011–0.0016 |
+| Local layer (silero VAD + PANNs CNN14 AED + SQUIM + dimensional/transcript, amortized CPU) | measured on the evaluation machine | $0.0002–0.0005 |
 | **Total** | | **$0.0013–0.0021** |
 | Measured bake-off gemini arm (reproducible via `make bakeoff`) | `out/bakeoff.md` | $0.00146 |
 
@@ -99,30 +101,24 @@ if the paid tier is ever unavailable, at the cost of the accuracy shown above.
 - **audio_quality**: 100% (3/3) on augmented clipping/dropout degradations
   (`out/validation_report.md`) — the deterministic clipping/dropout/rolloff/
   volume detectors are unaffected by clip length or where in a long clip the
-  damage sits (see `docs/decisions.md` §4).
+  damage sits (see `docs/decisions.md`).
 - **End-to-end field accuracy** on the 3 real labeled anchor calls, over a
-  5-field subset of the schema (`emotional_tone`, `background_noise_present`,
-  `audio_quality`, `speaker_overlap_present`, `long_silence_present` — 5 fields
-  × 3 calls = 15 comparisons; live Gemini arm): **13/15 = 86.7%** (gate:
-  ≥80%). Both misses are on `call_002` and trace to the same root cause:
-  Gemini fixates on one profanity phrase (`emotional_tone` +
-  `speaker_overlap_present`, the pipeline's disclosed weakest field). The
-  other 4 schema fields (`emotional_intensity`, `background_noise_type`,
-  `background_noise_severity`, `confidence`) are intentionally excluded from
-  this gate — they carry the real, disclosed misses covered in "Limitations"
-  below (e.g. call_002's severity reads `high` vs. labeled `medium`;
-  call_002/003's `background_noise_type` reads `radio` vs. labeled `TV`/
-  `sharp static`), so folding them into one blended accuracy number would
-  understate exactly what this section is trying to disclose honestly.
+  5-field subset (`emotional_tone`, `background_noise_present`, `audio_quality`,
+  `speaker_overlap_present`, `long_silence_present` — 5 fields × 3 calls = 15
+  comparisons; live Gemini arm): **13/15 = 86.7%**. Both misses are on
+  `call_002` and trace to the same root cause: Gemini fixates on one profanity
+  phrase (`emotional_tone` + `speaker_overlap_present`, the pipeline's disclosed
+  weakest field). The other schema fields carry the real, disclosed misses
+  covered in Limitations below.
 - **background_noise_present / severity** on the augmented validation set: 11%
-  / 0% (9 synthetic noise clips) — this is a harness limitation, not a
-  threshold bug: PANNs CNN14 essentially never recognizes synthetic
-  white-noise/two-tone-hum beds as any AudioSet class with enough
-  confidence+support to clear the presence gate (top classes are consistently
-  unrelated — "Animal", "Music", "Vehicle" — at 0.03–0.18, far below the 0.35
-  threshold), while the same detector correctly fires on the 2 real noisy
-  anchor calls (call_002 TV, call_003 static). See "Limitations" below and
-  `docs/decisions.md` §1 for the full evidence chain.
+  / 0% (9 synthetic noise clips) — a harness limitation, not a threshold bug:
+  PANNs CNN14 essentially never recognizes synthetic white-noise/two-tone-hum
+  beds as any AudioSet class above the presence gate, while the same detector
+  correctly fires on the 2 real noisy anchor calls (call_002 TV, call_003
+  static). See Limitations and `docs/decisions.md`.
+
+Full accuracy discussion, the tone confusion matrix, and the deployed-box
+latency figures are in the [technical memo](docs/technical-memo.md).
 
 ## Reproducing our results
 
@@ -134,98 +130,24 @@ make setup && make test && make analyze DIR=data/
   loaded, no API calls, seconds.
 - `make test-all` — full suite including `slow` (local model inference) and
   `network` (live Gemini/OpenAI calls, costs a small amount) markers.
-- `make analyze DIR=data/` — runs the real pipeline over `data/` (or a
-  ZIP), writes `out/results.csv` + `out/results.json`.
+- `make analyze DIR=data/` — runs the real pipeline over `data/` (or a ZIP),
+  writes `out/results.csv` + `out/results.json`.
 - `make evaluate` — field-level accuracy/F1 against `data/labels.csv` →
   `out/validation_report.md`.
-- `make bakeoff` — regenerates the tone-arm comparison table above →
-  `out/bakeoff.md`. Runs all 3 arms live (Gemini + OpenAI API calls; small
-  real cost, ~$0.01 for the 3 anchor calls).
+- `make bakeoff` — regenerates the tone-arm comparison above → `out/bakeoff.md`
+  (runs all 3 arms live; small real cost, ~$0.01 for the 3 anchor calls).
 
 `data/` (production audio + labels) and `.env` (all API keys) are gitignored
 from the first commit and must never be staged — verify with `git status`
 before any push.
 
-## Limitations (disclosed, not hidden)
-
-- **Speaker overlap** is the weakest field: no pretrained overlapped-speech
-  detector was viable (pyannote's claimed pretrained OSD was refuted for our
-  pyannote 3.x setup — research 0-3), so it is Gemini's own audio judgment,
-  defaulting to `false` without independent evidence. It shares gemini's
-  call_002 root-cause miss (the same profanity-phrase fixation that produces
-  the tone miss also suppresses the overlap opinion for that call).
-- **`background_noise_type` is AED best-effort, cross-checked by Gemini only
-  when Gemini independently agrees noise is present** — which it never did in
-  testing for continuous/ambient noise (static, hum, TV-bleed): across the 3
-  real anchors plus 9 synthetic noise-augmented clips, Gemini denied
-  `background_noise_present` on call_003 and on all 9 synthetic clips
-  outright. The fusion rule that would let Gemini override AED's *type* guess
-  when AED's margin is thin (`docs/decisions.md`, Task 9/11) is real,
-  unit-tested, and shipped — but has had **zero live trigger opportunities**
-  in any data gathered so far, because it requires Gemini to agree presence
-  while disagreeing on type, and Gemini has only ever denied presence outright
-  for this class of noise. Treat `background_noise_type` as an unverified,
-  best-effort label.
-- **Neither AED nor Gemini recognized synthetically-mixed noise beds** in the
-  eval harness (11% presence detection on 9 augmented clips) **while both work
-  on real-recording anchors** (call_002 TV, call_003 static both correctly
-  detected/flagged) — an honest harness-vs-reality gap, not evidence the
-  detectors are broken on real audio. Validating the AED presence-gate +
-  severity-band combination end-to-end needs real noise recordings, not
-  synthetic white-noise/hum beds (see `docs/decisions.md` §1).
-- **`background_noise_severity`** for call_002 reads `high` (measured SNR
-  0.28dB) vs. the client's own label `medium` — a known, pre-existing
-  labeler-vs-metric definitional disagreement (not touched by any calibration
-  pass; documented in `docs/decisions.md`, Task 6/11).
-- **`audio_quality`'s SQUIM backstop** scores a middle **15-second** window of
-  the clip (memory scales superlinearly with input length — measured 0.44GB
-  @5s up to ~14GB @60s, which swamped a 16GB machine at the original 60s
-  window). This is safe for the backstop's own `<1.3`-PESQ gate, and every
-  full-clip deterministic detector (clipping, dropouts, rolloff, volume) is
-  unaffected by the window choice — but SQUIM itself only ever "sees" a 15s
-  slice of longer calls.
-- **Dimensional tone arm is English-tuned** (audeering's V-A model) and has
-  **no speaker diarization** — it scores agent + customer speech mixed
-  together, which measurably inverts valence ordering on long agent-dominated
-  calls (call_003, 172s, mostly calm agent turns) vs. shorter customer-driven
-  calls (call_001). Kept out of the default pipeline for this reason (0/3 on
-  the bake-off); shipped only as a documented zero-cost fallback arm.
-- **Gemini bake-off sample is n=3** — every number in the tone-arm table above
-  is directional, not statistically powered. A single clip flipping changes
-  each arm's accuracy by 33 points.
-- **The Gemini prompt's decision rules were shaped on the same 3 labeled anchor
-  calls** used everywhere else in this disclosure — the repeated-hello
-  escalation rule (classify as `upset` after 3+ unanswered greetings) and the
-  profanity-requires-corroboration rule (a single crude aside is insufficient
-  evidence without independent, sustained escalation elsewhere in the call)
-  were iterated specifically against `call_001`/`call_002`/`call_003`. Their
-  generalization to other callers, languages, or phrasing is unvalidated
-  (n=3).
-- **call_002's tone label is a recorded disagreement**, not an unhandled bug:
-  the model consistently reads a single Spanish profanity phrase as decisive
-  frustration evidence across 4 independent prompt-wording iterations, despite
-  its own rationale acknowledging the rest of the call is calm — this may be a
-  genuine limitation of `gemini-3.1-flash-lite`'s ability to override a strong
-  lexical prior via prompt instruction alone, or the human label itself may be
-  debatable; both are plausible, and no further prompt iteration is planned
-  per the project's controller adjudication.
-
-## Technical memo
-
-[docs/technical-memo.md](docs/technical-memo.md) — the deliverable summary:
-accuracy (incl. confusion matrix), measured cost and latency, the
-budget–accuracy study conclusions, limitations, and the improvement roadmap.
-
-## Experiments
-
-See also: [Budget–accuracy study](docs/experiments/2026-07-17-budget-accuracy-study.md) — measured evidence for what a higher per-minute budget buys (five spending levers tested against the $0.003/audio-min ceiling).
-
 ## Dashboard (web UI)
 
 A FastAPI + React SPA (`src/dashboard/`, `webapp/`) wraps the pipeline for
 batch review: login, ZIP/folder upload with a pre-processing validation
-report, live per-file progress that survives a reload, per-file results/
-errors review, and CSV/JSON downloads.
+report, live per-file progress that survives a reload, per-file results/errors
+review, and CSV/JSON downloads. Deployed at
+**https://autoace.aixcoach.in** (systemd + nginx + Let's Encrypt on AWS EC2).
 
 Required env vars (`.env`; authoritative list is `src/dashboard/config.py`):
 
@@ -237,28 +159,68 @@ Required env vars (`.env`; authoritative list is `src/dashboard/config.py`):
 | `DASHBOARD_JWT_SECRET` | yes | — | long random string, e.g. `openssl rand -hex 32` |
 | `DASHBOARD_MAX_UPLOAD_MB` | no | `1024` | per-upload size cap |
 | `DASHBOARD_MAX_EXTRACT_MB` | no | `4096` | decompressed-size budget for uploaded ZIPs (zip-bomb guard) |
-| `DASHBOARD_STUB_ANALYZE` | no | `false` | dev/test only: canned per-file result, no models/API keys/network — use this for local dashboard dev so you're not paying for Gemini calls |
-| `DASHBOARD_DATA_DIR` | no | `data` | DB + per-job artifacts root; resolved to an absolute path at settings-load time, so it's stable regardless of the process's working directory |
+| `DASHBOARD_STUB_ANALYZE` | no | `false` | dev/test only: canned per-file result, no models/API keys/network |
+| `DASHBOARD_DATA_DIR` | no | `data` | DB + per-job artifacts root; resolved to an absolute path at settings-load time |
 
 Run it:
 
     make setup   # installs .[web,dev] — needed for both the pipeline and web test suites
     make web     # builds the SPA into webapp/dist, then serves API + SPA on :8000
 
-For frontend development with hot reload: `make web-dev` (API with
-`--reload`) alongside `cd webapp && npm run dev` (Vite dev server; proxies
-`/api` to `:8000`, see `webapp/vite.config.js`).
+For frontend development with hot reload: `make web-dev` (API with `--reload`)
+alongside `cd webapp && npm run dev` (Vite dev server; proxies `/api` to
+`:8000`). Web test/lint gates: `.venv/bin/pytest tests/web/ -q`,
+`cd webapp && npx vitest run`, `cd webapp && npm run build`.
 
-Web test/lint gates: `.venv/bin/pytest tests/web/ -q`, `cd webapp && npx
-vitest run`, `cd webapp && npm run build`.
+## Limitations (disclosed, not hidden)
+
+- **Speaker overlap** is the weakest field: no viable pretrained
+  overlapped-speech detector was found for our pyannote 3.x setup, so it is
+  Gemini's own audio judgment, defaulting to `false` without independent
+  evidence. It shares gemini's call_002 root-cause miss.
+- **`background_noise_type` is AED best-effort, cross-checked by Gemini only
+  when Gemini independently agrees noise is present** — which it never did in
+  testing for continuous/ambient noise (static, hum, TV-bleed). The fusion rule
+  that would let Gemini override AED's *type* guess when AED's margin is thin
+  (`docs/decisions.md`) is real, unit-tested, and shipped — but has had zero
+  live trigger opportunities so far, because it requires Gemini to agree
+  presence while disagreeing on type. Treat `background_noise_type` as an
+  unverified, best-effort label.
+- **Neither AED nor Gemini recognized synthetically-mixed noise beds** in the
+  eval harness (11% presence on 9 augmented clips) **while both work on
+  real-recording anchors** (call_002 TV, call_003 static) — an honest
+  harness-vs-reality gap, not evidence the detectors are broken on real audio.
+  Validating the presence-gate + severity-band combination end-to-end needs
+  real noise recordings, not synthetic beds (see `docs/decisions.md`).
+- **`background_noise_severity`** for call_002 reads `high` (measured SNR
+  0.28 dB) vs. the client's own label `medium` — a known labeler-vs-metric
+  definitional disagreement, not touched by any calibration pass
+  (`docs/decisions.md`).
+- **`audio_quality`'s SQUIM backstop** scores a middle **15-second** window of
+  the clip (memory scales superlinearly with input length — measured 0.44 GB
+  @5s up to ~14 GB @60s, which swamped a 16 GB machine at the original 60s
+  window). Safe for the backstop's own `<1.3`-PESQ gate; every full-clip
+  deterministic detector is unaffected by the window choice.
+- **Dimensional tone arm is English-tuned** and has **no speaker diarization**
+  — it scores agent + customer speech mixed, which inverts valence ordering on
+  long agent-dominated calls. Kept out of the default pipeline (0/3 on the
+  bake-off); shipped only as a documented zero-cost fallback arm.
+- **The Gemini prompt's decision rules were shaped on the same 3 labeled anchor
+  calls** used everywhere else in this disclosure. Their generalization to
+  other callers, languages, or phrasing is unvalidated (n=3).
+- **call_002's tone label is a recorded disagreement**, not an unhandled bug:
+  the model consistently reads a single Spanish profanity phrase as decisive
+  frustration evidence across 4 independent prompt-wording iterations, despite
+  its own rationale acknowledging the rest of the call is calm — a genuine
+  model-prior limitation, or the human label itself may be debatable; both are
+  plausible, and no further prompt iteration is planned.
 
 ## Security & data handling
 
-`data/` and `.env` are gitignored from the first commit. Audio goes to
-exactly one external service by default (Google Gemini API, paid tier —
-content not used for training, transient abuse-monitoring retention only),
-disclosed here with model name and pricing. The `transcript` bake-off arm
-additionally sends locally-transcribed text (never raw audio) to OpenAI; it
-is excluded from the shipped default pipeline. No telemetry; all model
-downloads (silero, PANNs CNN14, SQUIM, audeering wav2vec2, faster-whisper) are
-weights-only from HF/torch hubs.
+`data/` and `.env` are gitignored from the first commit. Audio goes to exactly
+one external service by default (Google Gemini API, paid tier — content not
+used for training, transient abuse-monitoring retention only). The `transcript`
+bake-off arm additionally sends locally-transcribed *text* (never raw audio) to
+OpenAI; it is excluded from the shipped default pipeline. No telemetry; all
+model downloads (silero, PANNs CNN14, SQUIM, audeering wav2vec2, faster-whisper)
+are weights-only from HF/torch hubs.

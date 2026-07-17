@@ -111,7 +111,17 @@ def worker_main(job_id: str, db_path: str, batch_root: str, out_dir: str, stub: 
         def progress(done: int, total: int, name: str, failed: str | None = None) -> None:
             store.update_progress(db, job_id, done=done, current_file=name, failed=failed)
 
-        kwargs = {"analyze_fn": stub_analyze} if stub else {}
+        if stub:
+            kwargs = {"analyze_fn": stub_analyze}
+        else:
+            # Warm the model singletons before file 1 so their load time shows
+            # as an explicit "loading models" phase, not a stuck first file.
+            from autoace_audio.pipeline import preload_models
+
+            store.update_progress(db, job_id, done=0, current_file=store.MODEL_LOADING)
+            preload_models()
+            store.update_progress(db, job_id, done=0, current_file=None)
+            kwargs = {}
         report = run_batch(Path(batch_root), Path(out_dir), progress_cb=progress, **kwargs)
         already = set(store.get_job(db, job_id)["warnings"])
         extra = [w for w in report.warnings if w not in already]  # validation warnings repeat

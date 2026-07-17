@@ -455,3 +455,21 @@ Tone bake-off (3 real labeled calls, `--arms gemini dimensional transcript`,
 - 2026-07-17 — generalized the agent framing in both tone prompts (removed the hardcoded name "Erica"): the hidden test set's agent name is unknown, and a sample-specific name is exactly the kind of overfit the brief's generalization clause warns about. Verified no anchor regression after the change (001 upset ✓ / 003 satisfied ✓ / 002 unchanged adjudicated xfail). Historical experiment modules (eval/experiments/) keep their frozen prompts — their logged results predate this change.
 
 - 2026-07-17 — hard per-request timeout on the Gemini client (`gemini_timeout_s=60.0`): an adversarial stress batch found that a single pathological clip (0.5s blip) wedged the batch CLI for 25+ minutes — the SDK's default HTTP timeout is unbounded, so one bad file could stall an entire 100-call evaluation batch indefinitely. With the bound, a stalled call exhausts 3 attempts (~3.5 min worst case) and drops into the existing local-tone-fallback path (verified live: fallback engaged and batch progressed). Also from the same sprint: prompt-level intensity tuning measurably regresses tone (two variants, each flipped a different anchor 3/3) — tone/intensity are prompt-coupled; reverted, baseline retained. CLAP zero-shot noise typing validated as the top roadmap lever (first correct "TV" identification on the TV anchor, locally, no new vendor); not integrated pre-submission. Confidence measured rank-informative but range-compressed (0.83–0.87) — recalibration is a documented post-trial item.
+- 2026-07-17 — model preload at worker start (`pipeline.preload_models`): the
+  always-used local models (silero VAD, PANNs tagger, SQUIM) load lazily as
+  process-wide singletons, so their combined load time (tens of seconds) used
+  to land inside the first file of every batch, which read as a stuck first
+  file in the dashboard's live queue. Workers now warm those singletons before
+  file 1 and the UI shows an explicit "loading models" phase (sentinel in
+  `current_file`). Fallback-only models (dimensional tone arm, whisper) stay
+  lazy on purpose — a preload must never download what a batch may never use.
+  Total batch wall-time is unchanged; this is a reporting-honesty fix. Known
+  longer-term options, deliberately not built pre-submission: (1) a persistent
+  warm worker that stays resident between batches with models loaded — removes
+  the per-batch load entirely but pins ~4 GB RAM on the host permanently and
+  rewrites the per-batch worker lifecycle (terminal statuses, orphan adoption,
+  restart survival) that is currently simple and tested; (2) a small pre-forked
+  worker pool (2–4 workers per the batch-sizing analysis) — same trade at
+  larger scale, only worth it if concurrent batches ever become a requirement.
+  At the target workload (~100-call batches, 35–70 min) the per-batch load is
+  <2% overhead, so the resident-memory cost is not currently justified.

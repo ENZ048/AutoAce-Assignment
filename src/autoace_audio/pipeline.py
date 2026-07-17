@@ -68,3 +68,15 @@ def analyze(path: Path, tone_arm: str | None = None) -> PipelineOutput:
             "elapsed_s": round(time.monotonic() - t0, 2),
         },
     )
+
+
+def preload_models() -> None:
+    """Warm the model singletons every batch uses (silero VAD, PANNs tagger,
+    SQUIM) in this process, so their load time lands before the first file
+    instead of inside it. Fallback-only models (dimensional tone, whisper)
+    stay lazy — a preload must never download what a batch may not need."""
+    from autoace_audio.analyzers import noise, quality, vad
+
+    vad._model()
+    noise._tagger()
+    quality._squim()

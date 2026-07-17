@@ -1,4 +1,4 @@
-import { buildQueueRows } from '../lib/status'
+import { buildQueueRows, isPreloading } from '../lib/status'
 
 function Stat({ value, label }) {
   return (
@@ -16,9 +16,16 @@ function elapsed(startedAt) {
 }
 
 export default function LiveQueue({ job }) {
-  const rows = buildQueueRows(job.files, job.done, job.total, job.status, job.failed_files)
+  const preloading = isPreloading(job)
+  // While models load, no file is being analyzed yet — every row reads pending.
+  const rows = buildQueueRows(job.files, job.done, job.total, preloading ? 'queued' : job.status, job.failed_files)
   return (
     <section>
+      {preloading && (
+        <p className="mb-3 rounded-lg bg-blue-100 px-3 py-2 text-xs text-blue-700">
+          Loading analysis models… happens once per batch, before the first file.
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-3">
         <Stat value={job.done} label="Processed" />
         <Stat value={job.total - job.done} label="Remaining" />

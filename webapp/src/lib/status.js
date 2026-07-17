@@ -10,6 +10,13 @@ export const STATUS_META = {
 
 export const isActive = (s) => ['validating', 'queued', 'running'].includes(s)
 
+// Sentinel the worker writes to current_file while loading models (once per
+// batch, before file 1). Mirrors store.MODEL_LOADING in the backend.
+export const MODEL_LOADING = '__loading_models__'
+
+export const isPreloading = (job) =>
+  job.status === 'running' && job.current_file === MODEL_LOADING && !job.done
+
 export const isTerminal = (s) => ['completed', 'failed', 'interrupted'].includes(s)
 
 export const shortId = (id) => (id || '').slice(0, 8)

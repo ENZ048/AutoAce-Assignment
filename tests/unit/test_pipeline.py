@@ -121,3 +121,18 @@ def test_analyze_survives_a_raw_non_tone_classifier_exception(monkeypatch, tmp_p
     assert "gemini blew up" in out.diagnostics["tone_error"]
     assert "fallback: dimensional blew up" in out.diagnostics["tone_error"]
     assert out.result.emotional_tone == EmotionalTone.NEUTRAL
+
+
+def test_preload_models_touches_each_always_used_singleton(monkeypatch):
+    """preload_models must warm exactly the models every batch uses (VAD,
+    PANNs tagger, SQUIM) — fallback-only models (dimensional tone, whisper)
+    stay lazy so a preload never downloads what a batch may never need."""
+    from autoace_audio import pipeline
+    from autoace_audio.analyzers import noise, quality, vad
+
+    called = []
+    monkeypatch.setattr(vad, "_model", lambda: called.append("vad"))
+    monkeypatch.setattr(noise, "_tagger", lambda: called.append("panns"))
+    monkeypatch.setattr(quality, "_squim", lambda: called.append("squim"))
+    pipeline.preload_models()
+    assert set(called) == {"vad", "panns", "squim"}

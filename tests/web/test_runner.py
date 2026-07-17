@@ -43,6 +43,63 @@ def test_spawn_worker_is_a_detached_subprocess(monkeypatch):
     assert h.pid == 111 and h.is_alive() and h.exitcode is None
 
 
+def _fake_report():
+    class R:
+        warnings = []
+        results = {}
+        errors = []
+
+    return R()
+
+
+def test_worker_preloads_models_before_run_batch(tmp_path, monkeypatch):
+    """Real (non-stub) workers load the model singletons up front, and mark
+    the job with the loading sentinel while doing so, so model-load time
+    never masquerades as first-file analysis time in the UI."""
+    import autoace_audio.batch as batch_mod
+    import autoace_audio.pipeline as pipeline_mod
+
+    calls = []
+    sentinel_seen = {}
+
+    db = store.connect(tmp_path / "t.db")
+    store.create_job(db, "j1", "b.zip")
+    store.set_status(db, "j1", "running")
+
+    def fake_preload():
+        calls.append("preload")
+        sentinel_seen["during"] = store.get_job(db, "j1")["current_file"]
+
+    def fake_run_batch(*a, **k):
+        calls.append("run")
+        return _fake_report()
+
+    monkeypatch.setattr(pipeline_mod, "preload_models", fake_preload)
+    monkeypatch.setattr(batch_mod, "run_batch", fake_run_batch)
+    runner.worker_main("j1", str(tmp_path / "t.db"), str(tmp_path), str(tmp_path / "out"), False)
+    assert calls == ["preload", "run"]
+    assert sentinel_seen["during"] == store.MODEL_LOADING
+    assert store.get_job(db, "j1")["current_file"] != store.MODEL_LOADING  # cleared after
+    db.close()
+
+
+def test_worker_skips_preload_in_stub_mode(tmp_path, monkeypatch):
+    import autoace_audio.batch as batch_mod
+    import autoace_audio.pipeline as pipeline_mod
+
+    calls = []
+    monkeypatch.setattr(pipeline_mod, "preload_models", lambda: calls.append("preload"))
+    monkeypatch.setattr(
+        batch_mod, "run_batch", lambda *a, **k: (calls.append("run"), _fake_report())[1]
+    )
+    db = store.connect(tmp_path / "t.db")
+    store.create_job(db, "j1", "b.zip")
+    store.set_status(db, "j1", "running")
+    runner.worker_main("j1", str(tmp_path / "t.db"), str(tmp_path), str(tmp_path / "out"), True)
+    assert calls == ["run"]
+    db.close()
+
+
 def test_sweep_orphans_marks_stale_jobs(tmp_path):
     db = store.connect(tmp_path / "t.db")
     statuses = [("r1", "running"), ("q1", "queued"), ("v1", "validating"), ("c1", "completed")]

@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 TERMINAL = {"completed", "failed", "interrupted"}
 
+# current_file sentinel a worker writes while loading models (once per batch,
+# before file 1). Mirrored by MODEL_LOADING in webapp/src/lib/status.js.
+MODEL_LOADING = "__loading_models__"
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
@@ -102,7 +106,7 @@ def update_progress(
     db: sqlite3.Connection,
     job_id: str,
     done: int,
-    current_file: str,
+    current_file: str | None,
     failed: str | None = None,
 ) -> None:
     db.execute(

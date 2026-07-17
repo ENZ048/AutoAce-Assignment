@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { STATUS_META, buildQueueRows, isActive, isTerminal, shortId } from './status'
+import { MODEL_LOADING, STATUS_META, buildQueueRows, isActive, isPreloading, isTerminal, shortId } from './status'
 
 const ALL = ['validating', 'awaiting_confirmation', 'queued', 'running',
   'completed', 'failed', 'interrupted']
@@ -35,6 +35,12 @@ describe('status helpers', () => {
     const files = ['a.wav', 'b.wav', 'c.wav']
     expect(buildQueueRows(files, 0, 3, 'queued').map((r) => r.state))
       .toEqual(['pending', 'pending', 'pending'])
+  })
+  it('isPreloading only while the worker reports the model-loading sentinel', () => {
+    expect(isPreloading({ status: 'running', current_file: MODEL_LOADING, done: 0 })).toBe(true)
+    expect(isPreloading({ status: 'running', current_file: 'a.wav', done: 1 })).toBe(false)
+    expect(isPreloading({ status: 'running', current_file: null, done: 0 })).toBe(false)
+    expect(isPreloading({ status: 'queued', current_file: MODEL_LOADING, done: 0 })).toBe(false)
   })
   it('isTerminal only for completed/failed/interrupted', () => {
     expect(ALL.filter(isTerminal)).toEqual(['completed', 'failed', 'interrupted'])

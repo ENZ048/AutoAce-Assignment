@@ -515,3 +515,159 @@ honestly including the losses.
 - **Spend:** $0.1580927640625 of the $10.00 cap used across all 7 stages
   (baseline + E1–E5 + combined) — nowhere near the $7.00 warn threshold,
   let alone the cap.
+
+## Phase 2: hardening experiments (2026-07-17)
+
+*Sources: `out/experiments/exp6_gap_vote_run{1,2,3}.json`,
+`out/experiments/exp7_tone_vote_run{1,2,3}.json`,
+`out/experiments/spend.json`; `.superpowers/sdd/phase2-task-1-report.md`
+(E6), `.superpowers/sdd/phase2-task-2-report.md` (E7). Phase 2 spend:
+$0.009975 (E6, 3 runs) + $0.0413415 (E7, 3 runs) = $0.0513165. Cumulative
+spend after Phase 2: **$0.2094092640625 of the $10.00 cap**
+(`out/experiments/spend.json`), up from $0.1580927640625 at the close of
+the original study above.*
+
+Phase 1 (above) closed with two open threads: E1's one real win
+(`call_003.ogg` noise confirmation) was session-flaky — 3/3 in its original
+standalone measurement, 1/3 when re-measured inside the combined-stack
+session — and needed a reliability harness before it could be trusted; and
+the accuracy-vs-cost curve had only three points, one of them (a "hardened
+E1" operating point near $0.002/min) still a projection, not a measurement.
+Phase 2 closes both: **E6** builds the 3-vote majority-voting harness E1
+needed and measures whether it actually stabilizes the win; **E7** asks the
+same voting question of the tone/intensity judgment, at a sampling
+temperature high enough to have a chance of finding real disagreement.
+
+## E6 — gap-listening majority-vote harness
+
+**Mechanism:** the same E1 gap-listening question (background noise present
+in the VAD gap audio, yes/no + type) is asked 3 times per clip per run
+instead of once; a majority vote (≥2 of 3) is taken per clip. Model/temperature
+unchanged from shipping (`gemini-3.1-flash-lite`, 0.1).
+
+| clip | truth | run 1 raw votes | run 2 raw votes | run 3 raw votes | majority-confirmed? |
+|---|---|---|---|---|---|
+| call_001.ogg | absent | F,F,F (0/3) | F,F,F (0/3) | F,F,F (0/3) | correctly absent, all 3 runs |
+| call_002.ogg | present (TV) | F,F,F (0/3) | F,F,F (0/3) | F,F,F (0/3) | unchanged miss, all 3 runs |
+| call_003.ogg | present (sharp static) | F,F,F (0/3) | F,T,F (1/3) | T,T,T (3/3) | **1 of 3 runs** (run 3 only) |
+
+**Verdict: reliability upgrade FAILED.** The brief's target was
+`call_003.ogg` majority-confirming in 3 of 3 runs; the measured result is
+**1 of 3 runs majority-confirmed**, raw per-run vote counts **0/3 – 1/3 –
+3/3**. The underlying single-vote signal explains why: across all 9
+individual gap-listening calls to `call_003.ogg` this session (3 runs × 3
+votes), 4 came back `true` — an empirical single-call hit rate of **~44%**
+(4/9), close to a coin flip even at temperature 0.1. At that rate, 1 of 3
+runs clearing the ≥2/3 bar is the statistically expected outcome, not an
+anomaly. **Honest statement: majority voting, as implemented (3 votes,
+≥2/3 bar), cannot stabilize a signal this close to a coin flip.** A higher
+vote count with a correspondingly higher bar, or a fundamentally stronger
+question, would be needed — not more of the same sampling.
+
+**The one safety property held perfectly.** `call_001.ogg` recorded **0
+false positives across all 9 individual votes** (3 runs × 3 votes, every
+one `background_noise_present: false`) — majority voting did not
+manufacture a false alarm on the clean call, the hard "don't ship"
+condition the phase-2 plan named explicitly.
+
+**Cost — measured, but not a reliability win.** Mean run cost **$0.003325**
+(runs $0.003321 / $0.003324 / $0.00333) → single-vote marginal
+$0.00027962/audio-min → voting marginal (3×) $0.00083886/audio-min.
+Operating point = baseline $0.00146 + $0.00083886 = **$0.0022989/audio-min
+≈ $0.0023/audio-min** (about 77% of the client's $0.003/audio-min ceiling).
+Per the phase-2 plan's binding rule, a measured $/min figure only earns the
+curve's MEASURED-reliable label when E6 majority-confirms 3 of 3 runs. It
+did not (case (b) of the rule) — **the number is real; the reliability
+claim it would have licensed is not.**
+
+*Source: `out/experiments/exp6_gap_vote_run{1,2,3}.json`;
+`.superpowers/sdd/phase2-task-1-report.md`.*
+
+## E7 — tone self-consistency vote at sampling temperature
+
+**Mechanism:** the shipping tone/intensity question is asked 3 times per
+clip per run at `temperature=0.7` (vs. the shipping single-call baseline's
+`temperature=0.1`); majority vote taken on `emotional_tone` and
+`emotional_intensity` independently.
+
+| clip | tone majority (3 runs) | intensity majority (3 runs) | dispersion (tone / intensity), all 3 runs |
+|---|---|---|---|
+| call_001.ogg | upset, 3/3 runs | medium, 3/3 runs | 3-same / 3-same |
+| call_002.ogg | frustrated, 3/3 runs | medium, 3/3 runs | 3-same / 3-same |
+| call_003.ogg | satisfied, 3/3 runs | low, 3/3 runs | 3-same / 3-same |
+
+**Verdict: FULL NULL.** Every one of the 27 individual votes cast (3 runs ×
+3 clips × 3 votes) landed on the exact same `emotional_tone` and
+`emotional_intensity` value as its own clip's other 2 votes — **9 of 9
+clip-run observations came back "3-same"** for both fields, 0 dispersion
+measured anywhere, and every majority matched the temp-0.1 baseline's own
+prediction exactly. Computed via `wins_field`/`loses_field` against the
+baseline logs: **0 wins, 0 regressions**, both fields, all 3 anchors.
+Voting has no logical room to change a verdict when all 3 sampled inputs
+already agree with each other and with the greedy baseline. **This is model
+conviction, not sampling noise: at temperature 0.7, this model shows no
+measured instability at all on these 3 anchors — there was no disagreement
+for voting to average away.**
+
+**Cost — over ceiling, for zero return.** Mean run cost **$0.0137805**
+(runs $0.0136995 / $0.0138375 / $0.0138045) ÷ 3.9637 audio-min =
+**$0.003477/audio-min** (2.38× the bake-off baseline). Against the client's
+**$0.003/audio-min ceiling: exceeds it by ~15.9%** ($0.003477 / $0.003 ≈
+1.159), on its own, before adding any other analyzer's cost. A cleaner
+"don't ship" than E6: not merely unproven, but simultaneously zero accuracy
+benefit and over budget.
+
+*Source: `out/experiments/exp7_tone_vote_run{1,2,3}.json`;
+`.superpowers/sdd/phase2-task-2-report.md`.*
+
+## The completed accuracy-vs-cost curve
+
+Four measured points — every configuration Phase 1 or Phase 2 ever ran
+against the 3 real anchors, at its measured $/audio-min. No projections
+remain.
+
+| config | $/audio-min (measured) | result | curve label |
+|---|---|---|---|
+| **baseline** (shipping, `gemini-3.1-flash-lite`, single call) | **$0.00146** ¹ | accuracy peak — 5/9 tone+intensity+overlap | **peak** |
+| E6 gap-vote (3-vote majority on the noise question) | **$0.0023** ² | 1/3 runs majority-confirmed (target 3/3); ~44% single-vote hit rate; 0 false positives | **no-gain** |
+| E7 tone-vote (3-vote self-consistency, temperature 0.7) | **$0.0035** ³ | 0 wins / 0 regressions vs. baseline; 9/9 clip-runs "3-same" | **null** |
+| E4 Gemini Flash (bigger model, from the original study) | **$0.0040** ⁴ | 1 win / 2 regressions / 1 wobble vs. baseline | **worse** |
+
+¹ Bake-off headline (`out/bakeoff.md`); see this document's Cost vs
+accuracy summary table above for the baseline's own alternate
+$0.0011525/audio-min measurement.
+² $0.0022989/audio-min measured (baseline + 3× measured single-vote
+marginal). Source: `out/experiments/exp6_gap_vote_run{1,2,3}.json`,
+`.superpowers/sdd/phase2-task-1-report.md`.
+³ $0.003476675833186165/audio-min measured (mean run cost ÷
+audio-minutes). Source: `out/experiments/exp7_tone_vote_run{1,2,3}.json`,
+`.superpowers/sdd/phase2-task-2-report.md`.
+⁴ $0.0039706/audio-min measured; see the E4 section above. Source:
+`out/experiments/exp4_flash_run{1,2,3}.json`.
+
+**No measured configuration beats shipping.** The curve does not have a
+hidden peak past the origin — every point measured past the baseline costs
+more and returns the same or worse accuracy. Phase 1's `$0.00146` shipping
+config remains, as measured, the best accuracy-per-dollar point on the
+curve. This closes the "projected $0.002/min operating point" question
+raised in the July 17 office discussion (private pitch doc): **there is no
+$0.002/min operating point to graduate from projected to measured.** The
+honest measured curve peaks at $0.00146/audio-min, and every tested attempt
+to buy more accuracy with more model spend — a bigger model (E4), a
+second-opinion pass (E3, Phase 1), majority-vote hardening (E6), and
+self-consistency voting (E7) — measurably failed to beat it.
+
+## Phase 2 recommendation
+
+Unchanged from, and now more strongly evidenced than, the Phase 1
+recommendation above: ship baseline + E1 gap-listening. Do not lean on the
+E6 voting harness as a reliability fix for E1 — as measured, it does not
+provide one; `call_003.ogg` noise confirmation should still be framed as
+"promising, still needs hardening," not "fixed." Do not adopt E7 tone
+self-consistency voting — as measured, it is a pure cost increase with zero
+accuracy benefit, and it lands over the client's ceiling on its own. The
+credible next-dollar ask is unchanged: **labeled data**, not more model
+spend in any form tested so far (bigger model, devil's-advocate pass,
+gap-vote majority, and tone-vote majority all measured
+net-neutral-to-negative on accuracy, every one of them at higher cost than
+shipping).

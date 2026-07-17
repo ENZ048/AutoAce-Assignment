@@ -64,12 +64,18 @@ def create_app() -> FastAPI:
 
     dist = Path(__file__).resolve().parents[2] / "webapp" / "dist"
     if dist.exists():  # dev API-only mode works without a build
+        dist_real = dist.resolve()
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
-            candidate = dist / path
-            if path and ".." not in path and candidate.is_file():
+            # A literal ".." substring check isn't enough: a percent-encoded leading
+            # slash (e.g. GET /%2Fetc%2Fpasswd -> path="/etc/passwd") makes `dist /
+            # path` discard `dist` entirely, since pathlib resets the join on an
+            # absolute right-hand side -- serving arbitrary local files. Resolve and
+            # confirm containment instead, mirroring zipsafe.py's zip-slip guard.
+            candidate = (dist / path).resolve()
+            if path and candidate.is_relative_to(dist_real) and candidate.is_file():
                 return FileResponse(candidate)
             return FileResponse(dist / "index.html")
 

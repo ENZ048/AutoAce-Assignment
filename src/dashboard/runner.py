@@ -3,16 +3,56 @@ The API process owns queueing (dispatch_once); the worker owns progress
 writes and its own terminal transition."""
 
 import logging
-import multiprocessing as mp
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 from dashboard import store
 
 logger = logging.getLogger(__name__)
 
-_ctx = mp.get_context("spawn")
-_processes: dict[str, object] = {}  # job_id -> live Process handle (this server process only)
+_processes: dict[str, object] = {}  # job_id -> live worker handle (this server process only)
+
+
+class _WorkerHandle:
+    """A session-detached worker subprocess.
+
+    Deliberately subprocess.Popen, not multiprocessing: multiprocessing's
+    atexit handler terminates daemonic children and joins non-daemonic ones
+    on clean interpreter exit, so either flavor makes a routine server
+    restart kill (or block for the length of) an in-flight batch. A detached
+    Popen child keeps running; on restart sweep_orphans adopts it via its
+    recorded pid — the lifecycle that machinery was built for."""
+
+    def __init__(self, args: list[str]):
+        self._proc = subprocess.Popen(args, start_new_session=True)
+
+    @property
+    def pid(self) -> int:
+        return self._proc.pid
+
+    def is_alive(self) -> bool:
+        return self._proc.poll() is None
+
+    @property
+    def exitcode(self) -> int | None:
+        return self._proc.returncode
+
+
+def _spawn_worker(job_id: str, db_path: str, batch_root: str, out_dir: str, stub: bool):
+    return _WorkerHandle(
+        [
+            sys.executable,
+            "-m",
+            "dashboard.worker",
+            job_id,
+            db_path,
+            batch_root,
+            out_dir,
+            "1" if stub else "0",
+        ]
+    )
 
 
 def _pid_alive(pid: int | None) -> bool:
@@ -159,19 +199,8 @@ def dispatch_once(db, db_path: Path, jobs_dir: Path, stub: bool) -> bool:
                 error=f"could not read batch_root.txt: {type(e).__name__}: {e}",
             )
             continue
-        proc = _ctx.Process(
-            target=worker_main,
-            kwargs=dict(
-                job_id=job["id"],
-                db_path=str(db_path),
-                batch_root=batch_root,
-                out_dir=str(job_dir / "out"),
-                stub=stub,
-            ),
-            daemon=True,
-        )
         store.set_status(db, job["id"], "running")
-        proc.start()
+        proc = _spawn_worker(job["id"], str(db_path), batch_root, str(job_dir / "out"), stub=stub)
         _processes[job["id"]] = proc
         store.set_worker_pid(db, job["id"], proc.pid)
         return True

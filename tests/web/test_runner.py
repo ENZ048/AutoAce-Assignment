@@ -15,6 +15,34 @@ def test_stub_analyze_returns_valid_result_and_fails_on_bad(tmp_path):
         runner.stub_analyze(tmp_path / "call_bad.wav")
 
 
+def test_spawn_worker_is_a_detached_subprocess(monkeypatch):
+    """The worker must be a session-detached subprocess, not a multiprocessing
+    child: multiprocessing's atexit either terminates daemonic children or
+    joins non-daemonic ones on clean interpreter exit, so either flavor makes
+    a routine server restart kill (or block on) an in-flight batch. A detached
+    Popen child survives, which is what sweep_orphans' adoption path expects."""
+    captured = {}
+
+    class FakePopen:
+        pid = 111
+
+        def __init__(self, args, **kw):
+            captured["args"] = list(args)
+            captured["kw"] = kw
+
+        def poll(self):
+            return None
+
+        returncode = None
+
+    monkeypatch.setattr(runner.subprocess, "Popen", FakePopen)
+    h = runner._spawn_worker("j1", "db.sqlite", "/tmp/root", "/tmp/out", stub=True)
+    assert captured["kw"]["start_new_session"] is True
+    assert captured["args"][1:3] == ["-m", "dashboard.worker"]
+    assert captured["args"][3:] == ["j1", "db.sqlite", "/tmp/root", "/tmp/out", "1"]
+    assert h.pid == 111 and h.is_alive() and h.exitcode is None
+
+
 def test_sweep_orphans_marks_stale_jobs(tmp_path):
     db = store.connect(tmp_path / "t.db")
     statuses = [("r1", "running"), ("q1", "queued"), ("v1", "validating"), ("c1", "completed")]
@@ -57,10 +85,7 @@ class _FakeProc:
 
 
 def test_dispatch_once_runs_one_job_at_a_time(tmp_path, monkeypatch):
-    class FakeCtx:
-        Process = staticmethod(lambda **kw: _FakeProc())
-
-    monkeypatch.setattr(runner, "_ctx", FakeCtx())
+    monkeypatch.setattr(runner, "_spawn_worker", lambda *a, **k: _FakeProc())
     runner._processes.clear()
     db = store.connect(tmp_path / "t.db")
     for jid in ("older", "newer"):
@@ -112,9 +137,6 @@ def test_dead_pid_running_row_is_interrupted_and_queue_resumes(tmp_path, monkeyp
     class _FakeProc:
         pid = 4242
 
-        def start(self):
-            pass
-
         def is_alive(self):
             return True
 
@@ -122,10 +144,7 @@ def test_dead_pid_running_row_is_interrupted_and_queue_resumes(tmp_path, monkeyp
         def exitcode(self):
             return None
 
-    class FakeCtx:
-        Process = staticmethod(lambda **kw: _FakeProc())
-
-    monkeypatch.setattr(runner, "_ctx", FakeCtx())
+    monkeypatch.setattr(runner, "_spawn_worker", lambda *a, **k: _FakeProc())
     runner._processes.clear()
     db = store.connect(tmp_path / "t.db")
     store.create_job(db, "stale", "a.zip")
@@ -153,10 +172,7 @@ def test_wedge_guard_missing_batch_root_fails_job_and_queue_continues(tmp_path, 
     stall the dispatcher: it gets marked failed and the next queued job still starts,
     in the same dispatch_once tick."""
 
-    class FakeCtx:
-        Process = staticmethod(lambda **kw: _FakeProc())
-
-    monkeypatch.setattr(runner, "_ctx", FakeCtx())
+    monkeypatch.setattr(runner, "_spawn_worker", lambda *a, **k: _FakeProc())
     runner._processes.clear()
     db = store.connect(tmp_path / "t.db")
     store.create_job(db, "wedged", "a.zip")

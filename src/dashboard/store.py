@@ -109,9 +109,12 @@ def finish(
     if row is None:  # job deleted while the worker was still running — nothing to finish
         return
     merged = json.loads(row["warnings"]) + list(extra_warnings)
+    # status='running' guard: a stale/adopted worker that finishes after the dispatcher
+    # or sweep_orphans already moved this row to interrupted/failed must not resurrect it
+    # back to completed. 0 rows updated in that case is an expected no-op, not an error.
     db.execute(
         "UPDATE jobs SET status = 'completed', finished_at = ?, results_count = ?, "
-        "errors_count = ?, warnings = ? WHERE id = ?",
+        "errors_count = ?, warnings = ? WHERE id = ? AND status = 'running'",
         (_now(), results_count, errors_count, json.dumps(merged), job_id),
     )
 

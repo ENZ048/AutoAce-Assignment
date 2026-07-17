@@ -2,13 +2,39 @@
 The API process owns queueing (dispatch_once); the worker owns progress
 writes and its own terminal transition."""
 
+import logging
 import multiprocessing as mp
+import os
 from pathlib import Path
 
 from dashboard import store
 
+logger = logging.getLogger(__name__)
+
 _ctx = mp.get_context("spawn")
 _processes: dict[str, object] = {}  # job_id -> live Process handle (this server process only)
+
+
+def _pid_alive(pid: int | None) -> bool:
+    """Best-effort liveness check: signal 0 probes for delivery, sends nothing.
+
+    Known limitation (documented, not solved here): PID reuse can make an
+    unrelated process look like our worker, notably after a host reboot on
+    bare metal. In the containerized deployment target, a fresh PID namespace
+    per container start makes a stale pid reliably dead, so the check is sound
+    there. The failure mode with a false-alive pid is a conservatively stuck
+    'running' row — safer than the double-running-workers bug this guards
+    against.
+    """
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def stub_analyze(path, tone_arm=None):
@@ -57,15 +83,37 @@ def worker_main(job_id: str, db_path: str, batch_root: str, out_dir: str, stub: 
             extra_warnings=extra,
         )
     except Exception as e:  # noqa: BLE001 — a worker must always leave a terminal status
-        store.set_status(db, job_id, "failed", error=f"{type(e).__name__}: {e}")
+        # Guarded like store.finish: only overwrite if the row is still 'running', so a
+        # stale/adopted worker whose job was already superseded (interrupted/failed by
+        # the dispatcher or startup sweep) can't resurrect it. Reading status then writing
+        # is racy in principle, but the only other writers (dispatch_once, sweep_orphans)
+        # apply the same status='running' precondition before moving a row off 'running',
+        # so this narrow window can't produce a wrong terminal state.
+        current = store.get_job(db, job_id)
+        if current is not None and current["status"] == "running":
+            store.set_status(db, job_id, "failed", error=f"{type(e).__name__}: {e}")
     finally:
         db.close()
 
 
 def sweep_orphans(db) -> None:
-    """Startup: previous server process left these behind."""
+    """Startup: previous server process left these behind — unless a 'running' row's
+    worker_pid is still alive, meaning the server restarted but the spawned worker
+    (a separate OS process) survived and is still working. Adopt it rather than
+    marking it interrupted, otherwise dispatch_once would start a second worker
+    alongside it: two concurrent ~4GB workers, the exact thing this module prevents."""
     for job in store.list_jobs(db):
-        if job["status"] in ("running", "queued"):
+        if job["status"] == "running":
+            if _pid_alive(job["worker_pid"]):
+                logger.warning(
+                    "job %s: adopted worker (pid %s) appears alive; leaving it running, "
+                    "will be monitored by the dispatcher",
+                    job["id"],
+                    job["worker_pid"],
+                )
+                continue
+            store.set_status(db, job["id"], "interrupted", error="interrupted by server restart")
+        elif job["status"] == "queued":
             store.set_status(db, job["id"], "interrupted", error="interrupted by server restart")
         elif job["status"] == "validating":
             store.set_status(db, job["id"], "failed", error="interrupted during validation")
@@ -77,7 +125,9 @@ def dispatch_once(db, db_path: Path, jobs_dir: Path, stub: bool) -> bool:
         if job["status"] != "running":
             continue
         proc = _processes.get(job["id"])
-        if proc is None:  # running row without a handle → predates a restart
+        if proc is None:  # running row without a handle → predates a restart, or an adopted orphan
+            if _pid_alive(job["worker_pid"]):
+                return False  # adopted orphan still working — treat as busy, start nothing
             store.set_status(db, job["id"], "interrupted", error="interrupted by server restart")
             continue
         if proc.is_alive():

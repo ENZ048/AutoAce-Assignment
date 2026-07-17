@@ -50,11 +50,21 @@ def test_progress_and_finish(db):
     store.update_progress(db, "j1", done=1, current_file="a.wav")
     job = store.get_job(db, "j1")
     assert job["done"] == 1 and job["current_file"] == "a.wav"
+    store.set_status(db, "j1", "running")  # finish() only completes a still-running row
     store.finish(db, "j1", results_count=1, errors_count=1, extra_warnings=["1/2 files fell back"])
     job = store.get_job(db, "j1")
     assert job["status"] == "completed"
     assert job["results_count"] == 1 and job["errors_count"] == 1
     assert job["warnings"] == ["1/2 files fell back"]
+
+
+def test_finish_only_completes_from_running(db):
+    store.create_job(db, "j1", "b.zip")
+    store.set_status(db, "j1", "interrupted", error="interrupted by server restart")
+    store.finish(db, "j1", results_count=2, errors_count=0, extra_warnings=[])
+    job = store.get_job(db, "j1")
+    assert job["status"] == "interrupted"
+    assert job["results_count"] is None
 
 
 def test_list_jobs_newest_first_and_delete(db):

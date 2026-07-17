@@ -1,3 +1,4 @@
+import os
 import time
 
 import pytest
@@ -25,6 +26,16 @@ def test_sweep_orphans_marks_stale_jobs(tmp_path):
     assert store.get_job(db, "q1")["status"] == "interrupted"
     assert store.get_job(db, "v1")["status"] == "failed"
     assert store.get_job(db, "c1")["status"] == "completed"
+    db.close()
+
+
+def test_sweep_leaves_running_row_with_live_pid(tmp_path):
+    db = store.connect(tmp_path / "t.db")
+    store.create_job(db, "r1", "b.zip")
+    store.set_status(db, "r1", "running")
+    store.set_worker_pid(db, "r1", os.getpid())  # our own pid — definitely alive
+    runner.sweep_orphans(db)
+    assert store.get_job(db, "r1")["status"] == "running"
     db.close()
 
 
@@ -62,6 +73,72 @@ def test_dispatch_once_runs_one_job_at_a_time(tmp_path, monkeypatch):
     assert store.get_job(db, "older")["status"] == "running"  # oldest queued first
     assert runner.dispatch_once(db, tmp_path / "t.db", tmp_path, stub=True) is False
     assert store.get_job(db, "newer")["status"] == "queued"  # waits its turn
+    runner._processes.clear()
+    db.close()
+
+
+def test_dispatch_treats_adopted_live_worker_as_busy(tmp_path):
+    runner._processes.clear()
+    db = store.connect(tmp_path / "t.db")
+    store.create_job(db, "adopted", "a.zip")
+    store.set_status(db, "adopted", "running")
+    store.set_worker_pid(db, "adopted", os.getpid())
+    store.create_job(db, "waiting", "b.zip")
+    store.set_status(db, "waiting", "queued")
+    assert runner.dispatch_once(db, tmp_path / "t.db", tmp_path, stub=True) is False
+    assert store.get_job(db, "adopted")["status"] == "running"
+    assert store.get_job(db, "waiting")["status"] == "queued"
+    db.close()
+
+
+def _noop():
+    pass
+
+
+def _ctx_dead_pid():
+    """Spawn a real short-lived process and return its pid after join — guaranteed dead,
+    not reused within the test (unlike a made-up integer, which risks colliding with a
+    live pid on the test host)."""
+    import multiprocessing as mp
+
+    p = mp.get_context("spawn").Process(target=_noop)
+    p.start()
+    p.join()
+    return p.pid
+
+
+def test_dead_pid_running_row_is_interrupted_and_queue_resumes(tmp_path, monkeypatch):
+    # fake Process handle so no real worker spawns when the queue resumes
+    class _FakeProc:
+        pid = 4242
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return True
+
+        @property
+        def exitcode(self):
+            return None
+
+    class FakeCtx:
+        Process = staticmethod(lambda **kw: _FakeProc())
+
+    monkeypatch.setattr(runner, "_ctx", FakeCtx())
+    runner._processes.clear()
+    db = store.connect(tmp_path / "t.db")
+    store.create_job(db, "stale", "a.zip")
+    store.set_status(db, "stale", "running")
+    dead = _ctx_dead_pid()
+    store.set_worker_pid(db, "stale", dead)
+    store.create_job(db, "waiting", "b.zip")
+    (tmp_path / "waiting").mkdir()
+    (tmp_path / "waiting" / "batch_root.txt").write_text(str(tmp_path / "waiting"))
+    store.set_status(db, "waiting", "queued")
+    assert runner.dispatch_once(db, tmp_path / "t.db", tmp_path, stub=True) is True
+    assert store.get_job(db, "stale")["status"] == "interrupted"
+    assert store.get_job(db, "waiting")["status"] == "running"
     runner._processes.clear()
     db.close()
 

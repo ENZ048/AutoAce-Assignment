@@ -68,6 +68,21 @@ def create_job_route(
             "Upload one ZIP archive, or select a folder (audio files + one CSV manifest).",
         )
 
+    # Folder uploads flatten each part to its basename (brief: audio files live at
+    # the batch root). Reject blank/duplicate names up front, before any job row or
+    # directory exists, so a bad request never needs cleanup and never orphans state.
+    names: list[str] = []
+    if not is_zip:
+        seen: set[str] = set()
+        for f in files:
+            name = Path(f.filename or "").name
+            if not name:
+                raise HTTPException(400, "Every uploaded file must have a filename.")
+            if name in seen:
+                raise HTTPException(400, f"Duplicate filename in upload: {name}")
+            seen.add(name)
+            names.append(name)
+
     job_id = uuid.uuid4().hex
     job_dir: Path = request.app.state.jobs_dir / job_id
     extracted = job_dir / "extracted"
@@ -81,9 +96,8 @@ def create_job_route(
             root = extract_zip(upload_path, extracted)
         else:
             extracted.mkdir(parents=True, exist_ok=True)
-            for f in files:
-                # brief: audio files at the batch root — flatten any folder paths
-                _stream_to(extracted / Path(f.filename).name, f, used, cap_bytes)
+            for f, name in zip(files, names, strict=True):
+                _stream_to(extracted / name, f, used, cap_bytes)
             root = extracted
         (job_dir / "batch_root.txt").write_text(str(root), encoding="utf-8")
         file_list, warnings = validate_batch(root)
@@ -101,6 +115,16 @@ def create_job_route(
     except zipfile.BadZipFile:
         _discard(db, job_id, job_dir)
         raise HTTPException(400, "The uploaded file is not a valid ZIP archive.") from None
+    except HTTPException:
+        # Any HTTPException raised from inside the try (not one of the specific
+        # cases above) still leaves a row + directory behind unless we clean up.
+        _discard(db, job_id, job_dir)
+        raise
+    except Exception:
+        # Safety net: any other failure (e.g. validate_batch raising unexpectedly)
+        # must not strand the job row or its directory. Clean up and propagate.
+        _discard(db, job_id, job_dir)
+        raise
 
 
 def _discard(db, job_id: str, job_dir: Path) -> None:

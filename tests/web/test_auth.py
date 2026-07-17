@@ -56,3 +56,18 @@ def test_garbage_and_wrong_secret_rejected():
         algorithm="HS256",
     )
     assert decode_token(other, s) is None
+
+
+def test_login_route_returns_token_and_gates_jobs(client):
+    assert client.get("/api/jobs").status_code == 401
+    r = client.post("/api/auth/login", json={"username": "autoace", "password": "Right#Pass1"})
+    assert r.status_code == 200
+    token = r.json()["access_token"]
+    r2 = client.get("/api/jobs", headers={"Authorization": f"Bearer {token}"})
+    assert r2.status_code == 200
+    assert r2.json() == []
+
+
+def test_login_route_rejects_wrong_password(client):
+    r = client.post("/api/auth/login", json={"username": "autoace", "password": "nope"})
+    assert r.status_code == 401

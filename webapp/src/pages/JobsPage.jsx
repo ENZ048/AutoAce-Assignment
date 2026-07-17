@@ -52,7 +52,7 @@ export default function JobsPage() {
               <tr>
                 <th className="px-4 py-3">Batch</th><th className="px-4 py-3">Uploaded</th>
                 <th className="px-4 py-3">Status</th><th className="px-4 py-3">Progress</th>
-                <th className="px-4 py-3">Files</th><th className="px-4 py-3" />
+                <th className="px-4 py-3">Files</th><th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -68,13 +68,21 @@ export default function JobsPage() {
                     {j.status === 'running' ? `${j.done}/${j.total}` : '—'}
                   </td>
                   <td className="px-4 py-3">{j.total}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => navigate(`/jobs/${j.id}`)}
-                      className="font-medium text-accent">Open</button>
-                    {isTerminal(j.status) && (
-                      <button onClick={() => handleDelete(j)}
-                        className="ml-3 font-medium text-red-700">Delete</button>
-                    )}
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button onClick={() => navigate(`/jobs/${j.id}`)}
+                        className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-1 text-xs font-medium text-accent hover:bg-accent/10">
+                        Open
+                      </button>
+                      {/* deletable whenever the API allows it: anything not queued/running
+                          (a running batch must be left to finish or fail first) */}
+                      {(isTerminal(j.status) || j.status === 'awaiting_confirmation') && (
+                        <button onClick={() => handleDelete(j)}
+                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-100">
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

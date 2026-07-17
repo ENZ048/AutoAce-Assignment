@@ -229,6 +229,7 @@ Required env vars (`.env`; authoritative list is `src/dashboard/config.py`):
 | `DASHBOARD_ADMIN_PASSWORD_HASH` | yes | — | bcrypt hash: `.venv/bin/python -m dashboard.hash_password '<plaintext>'` |
 | `DASHBOARD_JWT_SECRET` | yes | — | long random string, e.g. `openssl rand -hex 32` |
 | `DASHBOARD_MAX_UPLOAD_MB` | no | `1024` | per-upload size cap |
+| `DASHBOARD_MAX_EXTRACT_MB` | no | `4096` | decompressed-size budget for uploaded ZIPs (zip-bomb guard) |
 | `DASHBOARD_STUB_ANALYZE` | no | `false` | dev/test only: canned per-file result, no models/API keys/network — use this for local dashboard dev so you're not paying for Gemini calls |
 | `DASHBOARD_DATA_DIR` | no | `data` | DB + per-job artifacts root; resolved to an absolute path at settings-load time, so it's stable regardless of the process's working directory |
 

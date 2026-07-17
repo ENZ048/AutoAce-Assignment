@@ -95,7 +95,9 @@ def create_job_route(
         if is_zip:
             upload_path = job_dir / "upload" / Path(files[0].filename).name
             _stream_to(upload_path, files[0], used, cap_bytes)
-            root = extract_zip(upload_path, extracted)
+            root = extract_zip(
+                upload_path, extracted, max_extracted_bytes=settings.max_extract_mb * 1024 * 1024
+            )
         else:
             extracted.mkdir(parents=True, exist_ok=True)
             for f, name in zip(files, names, strict=True):

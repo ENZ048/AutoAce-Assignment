@@ -1,8 +1,9 @@
+import io
 import zipfile
 
 import pytest
 
-from dashboard.zipsafe import UnsafeZipError, extract_zip
+from dashboard.zipsafe import UnsafeZipError, _copy_limited, extract_zip
 
 
 def make_zip(path, entries: dict[str, bytes]):
@@ -59,6 +60,25 @@ def test_finder_zip_macosx_junk_ignored_for_root_resolution(tmp_path):
     root = extract_zip(z, tmp_path / "x")
     assert root == tmp_path / "x" / "batch"
     assert (root / "call_001.wav").exists()
+
+
+def test_zip_bomb_rejected_by_decompressed_size_cap(tmp_path):
+    """A zip whose declared decompressed size exceeds the cap is rejected
+    before anything is extracted (compressed size is irrelevant)."""
+    z = make_zip(tmp_path / "b.zip", {"big.wav": b"\x00" * 65536, "ok.wav": b"RIFF"})
+    dest = tmp_path / "x"
+    with pytest.raises(UnsafeZipError):
+        extract_zip(z, dest, max_extracted_bytes=16384)
+    assert not (dest / "ok.wav").exists()  # all-or-nothing
+
+
+def test_copy_limited_stops_streams_that_exceed_the_declared_size():
+    """Defense in depth: even if zip metadata lies about file_size, the
+    streaming copy itself enforces the byte budget."""
+    src = io.BytesIO(b"\x00" * 1000)
+    out = io.BytesIO()
+    with pytest.raises(UnsafeZipError):
+        _copy_limited(src, out, remaining=100)
 
 
 @pytest.mark.parametrize("evil", ["../evil.txt", "a/../../evil.txt", "/abs.txt"])

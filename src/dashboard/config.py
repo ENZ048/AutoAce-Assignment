@@ -13,6 +13,7 @@ class DashboardSettings(BaseSettings):
     admin_password_hash: str
     jwt_secret: str
     max_upload_mb: int = 1024
+    max_extract_mb: int = 4096  # decompressed-size budget for uploaded ZIPs (zip-bomb guard)
     stub_analyze: bool = False  # dev/test only: canned analyze, no models/keys
     data_dir: Path = Path("data")
 

@@ -16,6 +16,7 @@ def test_settings_load_from_env(monkeypatch, tmp_path):
     s = get_dashboard_settings()
     assert s.admin_user == "autoace"
     assert s.max_upload_mb == 1024  # default
+    assert s.max_extract_mb == 4096  # default
     assert s.stub_analyze is False  # default
     assert str(s.data_dir) == str(tmp_path)
 

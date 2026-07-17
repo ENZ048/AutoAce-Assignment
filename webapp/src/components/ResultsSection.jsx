@@ -27,7 +27,7 @@ const Bool = ({ value }) =>
 
 function ConfidenceCell({ value }) {
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-center gap-2">
       <span className="h-1 w-12 overflow-hidden rounded-full bg-gray-100">
         <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.round(value * 100)}%` }} />
       </span>
@@ -42,7 +42,7 @@ const COLUMNS = [
   { label: 'file', cell: (r) => <span className="whitespace-nowrap font-mono text-xs text-ink">{r.name}</span> },
   { label: 'tone', cell: (r) => <Chip value={r.emotional_tone} /> },
   { label: 'intensity', cell: (r) => <Chip value={r.emotional_intensity} /> },
-  { label: 'noise', center: true, cell: (r) => <Bool value={r.background_noise_present} /> },
+  { label: 'noise', cell: (r) => <Bool value={r.background_noise_present} /> },
   {
     label: 'noise type',
     cell: (r) =>
@@ -52,9 +52,9 @@ const COLUMNS = [
   },
   { label: 'severity', cell: (r) => <Chip value={r.background_noise_severity} /> },
   { label: 'quality', cell: (r) => <Chip value={r.audio_quality} /> },
-  { label: 'overlap', center: true, cell: (r) => <Bool value={r.speaker_overlap_present} /> },
-  { label: 'long silence', center: true, cell: (r) => <Bool value={r.long_silence_present} /> },
-  { label: 'confidence', right: true, cell: (r) => <ConfidenceCell value={r.confidence} /> },
+  { label: 'overlap', cell: (r) => <Bool value={r.speaker_overlap_present} /> },
+  { label: 'long silence', cell: (r) => <Bool value={r.long_silence_present} /> },
+  { label: 'confidence', cell: (r) => <ConfidenceCell value={r.confidence} /> },
 ]
 
 export default function ResultsSection({ job }) {
@@ -146,7 +146,7 @@ export default function ResultsSection({ job }) {
             {shown.map((r) => (
               <tr key={r.name} className="border-t border-gray-100 transition-colors first:border-t-0 hover:bg-wash/60">
                 {COLUMNS.map((c) => (
-                  <td key={c.label} className={`px-4 py-3 ${c.right ? 'text-right' : c.center ? 'text-center' : ''}`}>{c.cell(r)}</td>
+                  <td key={c.label} className="px-4 py-3 text-center align-middle">{c.cell(r)}</td>
                 ))}
               </tr>
             ))}

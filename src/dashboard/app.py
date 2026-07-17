@@ -1,4 +1,4 @@
-"""FastAPI app factory + background dispatcher. Static SPA serving arrives in Task 12."""
+"""FastAPI app factory + background dispatcher, security headers, and single-origin SPA serving."""
 
 import asyncio
 import logging
@@ -48,4 +48,29 @@ def create_app() -> FastAPI:
     app.state.db = store.connect(settings.data_dir / "dashboard.db")
     app.state.jobs_dir = settings.data_dir / "jobs"
     app.include_router(api.router)
+
+    @app.middleware("http")
+    async def _security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    dist = Path(__file__).resolve().parents[2] / "webapp" / "dist"
+    if dist.exists():  # dev API-only mode works without a build
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        def spa(path: str):
+            candidate = dist / path
+            if path and ".." not in path and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(dist / "index.html")
+
     return app

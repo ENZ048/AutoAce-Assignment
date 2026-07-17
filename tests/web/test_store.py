@@ -106,3 +106,16 @@ def test_requeue_resets_run_state(db):
     assert job["error"] is None and job["finished_at"] is None and job["started_at"] is None
     assert job["results_count"] is None and job["errors_count"] is None
     assert job["total"] == 2 and job["warnings"] == ["w"]  # validation facts survive
+
+
+def test_requeue_clears_previous_attempts_worker_pid(db):
+    """A re-run must not inherit the dead attempt's pid: if the server crashes
+    between set_status('running') and set_worker_pid, a stale pid that the OS
+    has since reused would make sweep_orphans adopt an unrelated process and
+    wedge the queue behind a phantom worker."""
+    store.create_job(db, "j1", "b.zip")
+    store.set_status(db, "j1", "running")
+    store.set_worker_pid(db, "j1", 4242)
+    store.set_status(db, "j1", "failed", error="boom")
+    store.requeue(db, "j1")
+    assert store.get_job(db, "j1")["worker_pid"] is None

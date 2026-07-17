@@ -130,7 +130,8 @@ def delete_job(db: sqlite3.Connection, job_id: str) -> None:
 def requeue(db: sqlite3.Connection, job_id: str) -> None:
     db.execute(
         "UPDATE jobs SET status = 'queued', done = 0, current_file = NULL, error = NULL, "
-        "started_at = NULL, finished_at = NULL, results_count = NULL, errors_count = NULL "
+        "started_at = NULL, finished_at = NULL, results_count = NULL, errors_count = NULL, "
+        "worker_pid = NULL "  # a re-run must never inherit the dead attempt's (reusable) pid
         "WHERE id = ?",
         (job_id,),
     )

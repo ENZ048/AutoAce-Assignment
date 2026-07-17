@@ -210,6 +210,36 @@ before any push.
   debatable; both are plausible, and no further prompt iteration is planned
   per the project's controller adjudication.
 
+## Dashboard (web UI)
+
+A FastAPI + React SPA (`src/dashboard/`, `webapp/`) wraps the pipeline for
+batch review: login, ZIP/folder upload with a pre-processing validation
+report, live per-file progress that survives a reload, per-file results/
+errors review, and CSV/JSON downloads.
+
+Required env vars (`.env`; authoritative list is `src/dashboard/config.py`):
+
+| var | required | default | notes |
+|---|---|---|---|
+| `DASHBOARD_ADMIN_USER` | yes | — | login username handed to the client |
+| `DASHBOARD_ADMIN_PASSWORD_HASH` | yes | — | bcrypt hash: `.venv/bin/python -m dashboard.hash_password '<plaintext>'` |
+| `DASHBOARD_JWT_SECRET` | yes | — | long random string, e.g. `openssl rand -hex 32` |
+| `DASHBOARD_MAX_UPLOAD_MB` | no | `1024` | per-upload size cap |
+| `DASHBOARD_STUB_ANALYZE` | no | `false` | dev/test only: canned per-file result, no models/API keys/network — use this for local dashboard dev so you're not paying for Gemini calls |
+| `DASHBOARD_DATA_DIR` | no | `data` | DB + per-job artifacts root; resolved to an absolute path at settings-load time, so it's stable regardless of the process's working directory |
+
+Run it:
+
+    make setup   # installs .[web,dev] — needed for both the pipeline and web test suites
+    make web     # builds the SPA into webapp/dist, then serves API + SPA on :8000
+
+For frontend development with hot reload: `make web-dev` (API with
+`--reload`) alongside `cd webapp && npm run dev` (Vite dev server; proxies
+`/api` to `:8000`, see `webapp/vite.config.js`).
+
+Web test/lint gates: `.venv/bin/pytest tests/web/ -q`, `cd webapp && npx
+vitest run`, `cd webapp && npm run build`.
+
 ## Security & data handling
 
 `data/` and `.env` are gitignored from the first commit. Audio goes to

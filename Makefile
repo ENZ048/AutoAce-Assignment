@@ -5,7 +5,7 @@ PYTEST := .venv/bin/pytest
 setup:
 	python3.12 -m venv .venv || python3 -m venv .venv
 	$(PIP) install -q -U pip
-	$(PIP) install -q -e ".[dev]"
+	$(PIP) install -q -e ".[web,dev]"
 	@command -v ffmpeg >/dev/null || echo "WARNING: ffmpeg not found on PATH — required at runtime"
 
 test:

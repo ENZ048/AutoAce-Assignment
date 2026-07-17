@@ -136,7 +136,7 @@ export default function ResultsSection({ job }) {
             <tr className="border-b border-gray-200">
               {COLUMNS.map((c) => (
                 <th key={c.label}
-                  className={`whitespace-nowrap px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600 ${c.right ? 'text-right' : c.center ? 'text-center' : ''}`}>
+                  className="whitespace-nowrap px-4 py-3 text-center align-middle text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600">
                   {c.label}
                 </th>
               ))}

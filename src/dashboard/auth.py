@@ -1,5 +1,7 @@
-"""Single-admin auth: bcrypt against the env-provisioned hash, stateless HS256 JWT."""
+"""Single-admin auth: bcrypt against the env-provisioned hash (or a plaintext
+env password for local dev), stateless HS256 JWT."""
 
+import secrets
 import time
 
 import bcrypt
@@ -17,12 +19,15 @@ _bearer = HTTPBearer(auto_error=False)
 def verify_login(username: str, password: str, settings: DashboardSettings) -> bool:
     if username != settings.admin_user:
         return False
-    try:
-        return bcrypt.checkpw(
-            password.encode("utf-8"), settings.admin_password_hash.encode("utf-8")
-        )
-    except ValueError:  # malformed stored hash — treat as auth failure, never a 500
-        return False
+    if settings.admin_password_hash:
+        try:
+            return bcrypt.checkpw(
+                password.encode("utf-8"), settings.admin_password_hash.encode("utf-8")
+            )
+        except ValueError:  # malformed stored hash — treat as auth failure, never a 500
+            return False
+    # Plaintext fallback (config guarantees one of the two is set); constant-time.
+    return secrets.compare_digest(password.encode("utf-8"), settings.admin_password.encode("utf-8"))
 
 
 def create_token(settings: DashboardSettings) -> str:

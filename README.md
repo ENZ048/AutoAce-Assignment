@@ -226,7 +226,8 @@ Required env vars (`.env`; authoritative list is `src/dashboard/config.py`):
 | var | required | default | notes |
 |---|---|---|---|
 | `DASHBOARD_ADMIN_USER` | yes | — | login username handed to the client |
-| `DASHBOARD_ADMIN_PASSWORD_HASH` | yes | — | bcrypt hash: `.venv/bin/python -m dashboard.hash_password '<plaintext>'` |
+| `DASHBOARD_ADMIN_PASSWORD_HASH` | one of these two | — | bcrypt hash: `.venv/bin/python -m dashboard.hash_password '<plaintext>'`; takes precedence if both are set |
+| `DASHBOARD_ADMIN_PASSWORD` | one of these two | — | plaintext login password (local-dev convenience; prefer the hash for handoff) |
 | `DASHBOARD_JWT_SECRET` | yes | — | long random string, e.g. `openssl rand -hex 32` |
 | `DASHBOARD_MAX_UPLOAD_MB` | no | `1024` | per-upload size cap |
 | `DASHBOARD_MAX_EXTRACT_MB` | no | `4096` | decompressed-size budget for uploaded ZIPs (zip-bomb guard) |

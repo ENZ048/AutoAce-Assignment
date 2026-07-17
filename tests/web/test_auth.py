@@ -32,6 +32,18 @@ def test_malformed_stored_hash_is_auth_failure_not_error():
     assert verify_login("autoace", "Right#Pass1", s) is False
 
 
+def test_verify_login_with_plaintext_env_password():
+    s = make_settings(admin_password_hash="", admin_password="Plain#Pass1")
+    assert verify_login("autoace", "Plain#Pass1", s) is True
+    assert verify_login("autoace", "wrong", s) is False
+
+
+def test_hash_takes_precedence_when_both_are_set():
+    s = make_settings(admin_password="Other#Pass2")  # hash for Right#Pass1 also set
+    assert verify_login("autoace", "Right#Pass1", s) is True
+    assert verify_login("autoace", "Other#Pass2", s) is False
+
+
 def test_token_roundtrip():
     s = make_settings()
     payload = decode_token(create_token(s), s)

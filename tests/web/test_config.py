@@ -51,6 +51,29 @@ def test_missing_required_key_fails_fast(monkeypatch, tmp_path):
         get_dashboard_settings()
 
 
+def test_plaintext_password_accepted_instead_of_hash(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DASHBOARD_ADMIN_USER", "autoace")
+    monkeypatch.delenv("DASHBOARD_ADMIN_PASSWORD_HASH", raising=False)
+    monkeypatch.setenv("DASHBOARD_ADMIN_PASSWORD", "Plain#Pass1")
+    monkeypatch.setenv("DASHBOARD_JWT_SECRET", "s3cret")
+    clear_settings_cache()
+    s = get_dashboard_settings()
+    assert s.admin_password == "Plain#Pass1"
+    assert s.admin_password_hash == ""
+
+
+def test_missing_both_password_options_fails_fast(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DASHBOARD_ADMIN_USER", "autoace")
+    monkeypatch.delenv("DASHBOARD_ADMIN_PASSWORD_HASH", raising=False)
+    monkeypatch.delenv("DASHBOARD_ADMIN_PASSWORD", raising=False)
+    monkeypatch.setenv("DASHBOARD_JWT_SECRET", "s3cret")
+    clear_settings_cache()
+    with pytest.raises(Exception, match="(?i)password"):
+        get_dashboard_settings()
+
+
 def test_settings_cached_until_cleared(monkeypatch, tmp_path):
     _set_required(monkeypatch)
     clear_settings_cache()

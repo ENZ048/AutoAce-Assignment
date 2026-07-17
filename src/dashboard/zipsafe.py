@@ -46,7 +46,8 @@ def _resolve_batch_root(dest: Path) -> Path:
         return dest
     subdirs = [d for d in dest.iterdir() if d.is_dir()]
     if len(subdirs) == 1:
-        for csv_file in dest.glob("*.csv"):
+        root_csvs = [p for p in dest.iterdir() if p.is_file() and p.suffix.lower() == ".csv"]
+        for csv_file in root_csvs:
             shutil.move(str(csv_file), str(subdirs[0] / csv_file.name))
         return subdirs[0]
     return dest

@@ -32,6 +32,17 @@ def test_single_subdir_becomes_root_and_csv_moves_in(tmp_path):
     assert not (tmp_path / "x" / "labels.csv").exists()
 
 
+def test_uppercase_csv_also_moves_into_subdir_root(tmp_path):
+    z = make_zip(
+        tmp_path / "b.zip",
+        {"batch/call_001.wav": b"RIFF", "LABELS.CSV": b"name,result_json\n"},
+    )
+    root = extract_zip(z, tmp_path / "x")
+    assert root == tmp_path / "x" / "batch"
+    assert (root / "LABELS.CSV").exists()
+    assert not (tmp_path / "x" / "LABELS.CSV").exists()
+
+
 @pytest.mark.parametrize("evil", ["../evil.txt", "a/../../evil.txt", "/abs.txt"])
 def test_hostile_members_rejected_before_extraction(tmp_path, evil):
     z = make_zip(tmp_path / "b.zip", {"ok.wav": b"RIFF", evil: b"x"})

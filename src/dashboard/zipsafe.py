@@ -1,12 +1,14 @@
-"""Zip-slip-safe extraction + batch-root resolution.
+"""Zip-slip-safe extraction.
 
-Mirrors autoace_audio.batch._unzip_if_needed's root-resolution semantics.
 Exists because ZipFile.extractall lacks member-path safety and we extract into
-the job directory, not a tempdir. Backend code is never modified."""
+the job directory, not a tempdir. Batch-root resolution is shared with the CLI
+(autoace_audio.batch.resolve_batch_root) so both surfaces agree on the root."""
 
 import shutil
 import zipfile
 from pathlib import Path
+
+from autoace_audio.batch import resolve_batch_root
 
 
 class UnsafeZipError(ValueError):
@@ -35,19 +37,4 @@ def extract_zip(zip_path: Path, dest: Path) -> Path:
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(info) as src, open(target, "wb") as out:
                 shutil.copyfileobj(src, out)
-    return _resolve_batch_root(dest)
-
-
-def _resolve_batch_root(dest: Path) -> Path:
-    """Same rules as the backend: root wins if it has non-CSV files; else a single
-    subdir becomes the batch root and root-level CSVs move into it."""
-    non_csv = [p for p in dest.iterdir() if p.is_file() and p.suffix.lower() != ".csv"]
-    if non_csv:
-        return dest
-    subdirs = [d for d in dest.iterdir() if d.is_dir()]
-    if len(subdirs) == 1:
-        root_csvs = [p for p in dest.iterdir() if p.is_file() and p.suffix.lower() == ".csv"]
-        for csv_file in root_csvs:
-            shutil.move(str(csv_file), str(subdirs[0] / csv_file.name))
-        return subdirs[0]
-    return dest
+    return resolve_batch_root(dest)

@@ -144,6 +144,22 @@ def test_temp_dir_cleanup_after_run_batch(tmp_path):
     assert not Path(created_dirs[0]).exists()
 
 
+def test_finder_zip_macosx_junk_does_not_defeat_root_resolution(tmp_path):
+    """macOS Finder zips carry __MACOSX/ and .DS_Store alongside the payload
+    folder; they must not stop the single payload subdir from becoming the
+    batch root."""
+    zip_path = tmp_path / "finder.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr("MyBatch/sound.wav", b"RIFFxxxxWAVE")
+        z.writestr("MyBatch/labels.csv", "name,result_json\r\nsound.wav,\r\n")
+        z.writestr("__MACOSX/._MyBatch", b"\x00\x05\x16\x07")
+        z.writestr("__MACOSX/MyBatch/._sound.wav", b"\x00\x05\x16\x07")
+        z.writestr(".DS_Store", b"\x00")
+    report = run_batch(zip_path, tmp_path / "out", analyze_fn=_fake_analyze)
+    assert set(report.results) == {"sound.wav"}
+    assert len(report.errors) == 0
+
+
 def test_manifest_row_with_nonstandard_extension_is_processed_not_warned_missing(tmp_path):
     """Reviewer finding: decode is ffprobe content-sniffing, never extension-based
     (see audio_io.py) -- a manifest row naming a file that actually exists on disk

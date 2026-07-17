@@ -55,27 +55,37 @@ def validate_batch(input_dir: Path) -> tuple[list[Path], list[str]]:
     return files, warnings
 
 
+def _is_archive_junk(p: Path) -> bool:
+    """Archiver metadata that must not influence batch-root resolution:
+    macOS Finder's __MACOSX/ mirror, .DS_Store, and AppleDouble ._* files."""
+    return p.name in ("__MACOSX", ".DS_Store") or p.name.startswith("._")
+
+
+def resolve_batch_root(root: Path) -> Path:
+    """Pick the directory to process after extraction: root wins if it has
+    non-CSV files; else a single subdir becomes the batch root and root-level
+    CSVs move into it. Shared by the CLI and the dashboard so both resolve the
+    same root for the same ZIP."""
+    entries = [p for p in root.iterdir() if not _is_archive_junk(p)]
+    non_csv_files = [p for p in entries if p.is_file() and p.suffix.lower() != ".csv"]
+    if non_csv_files:
+        return root
+    subdirs = [d for d in entries if d.is_dir()]
+    if len(subdirs) == 1:
+        csv_files = [p for p in entries if p.is_file() and p.suffix.lower() == ".csv"]
+        for csv_file in csv_files:
+            shutil.move(str(csv_file), str(subdirs[0] / csv_file.name))
+        return subdirs[0]
+    return root
+
+
 def _unzip_if_needed(input_path: Path) -> tuple[Path, Path | None]:
     """Extract ZIP if needed, return (working_dir, temp_dir_to_cleanup)."""
     if input_path.suffix.lower() == ".zip":
         target = Path(tempfile.mkdtemp(prefix="autoace_batch_"))
         with zipfile.ZipFile(input_path) as z:
             z.extractall(target)
-        # Determine which directory to process: if root has audio files, use it;
-        # elif one subdir exists and root has CSVs, move CSVs into subdir and use it;
-        # else use root.
-        non_csv_files = [p for p in target.iterdir() if p.is_file() and p.suffix.lower() != ".csv"]
-        if non_csv_files:
-            return target, target
-        subdirs = [d for d in target.iterdir() if d.is_dir()]
-        if len(subdirs) == 1:
-            csv_files = list(target.glob("*.csv"))
-            if csv_files:
-                # Move CSVs into the single subdirectory
-                for csv_file in csv_files:
-                    shutil.move(str(csv_file), str(subdirs[0] / csv_file.name))
-            return subdirs[0], target
-        return target, target
+        return resolve_batch_root(target), target
     return input_path, None
 
 

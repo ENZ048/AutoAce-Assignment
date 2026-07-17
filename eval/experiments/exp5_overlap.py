@@ -223,9 +223,11 @@ def run_once(run_idx: int = 1) -> dict:
         "run": run_idx,
         "cost_usd": total_cost,
         "audio_minutes": round(sum(c["audio_s"] for c in per_clip.values()) / 60.0, 6),
-        "rate_per_min": DG_RATE_PER_MIN,
-        "diarize_addon_per_min": DG_DIARIZE_ADDON_PER_MIN,
-        "pricing_source": PRICING_SOURCE,
+        "pricing": {
+            "rate_per_min": DG_RATE_PER_MIN,
+            "diarize_addon_per_min": DG_DIARIZE_ADDON_PER_MIN,
+            "source": PRICING_SOURCE,
+        },
         "model": DG_MODEL_ID,  # standing amendment: Deepgram model id used
         "dimensional_model": DIMENSIONAL_MODEL_ID,  # standing amendment: bonus arm's model id
         "per_clip": per_clip,

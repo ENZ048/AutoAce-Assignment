@@ -396,9 +396,9 @@ def test_run_once_logs_run_level_models_and_per_clip_audio_s_cost_and_spans(monk
     assert payload["run"] == 1
     assert payload["model"] == exp5.DG_MODEL_ID == "nova-2"
     assert payload["dimensional_model"] == dimensional.MODEL_ID
-    assert payload["pricing_source"] == exp5.PRICING_SOURCE
-    assert payload["rate_per_min"] == exp5.DG_RATE_PER_MIN
-    assert payload["diarize_addon_per_min"] == exp5.DG_DIARIZE_ADDON_PER_MIN
+    assert payload["pricing"]["source"] == exp5.PRICING_SOURCE
+    assert payload["pricing"]["rate_per_min"] == exp5.DG_RATE_PER_MIN
+    assert payload["pricing"]["diarize_addon_per_min"] == exp5.DG_DIARIZE_ADDON_PER_MIN
     assert payload["audio_minutes"] == pytest.approx(sum(durations_s.values()) / 60.0, abs=1e-4)
 
     pc = payload["per_clip"]
@@ -453,3 +453,25 @@ def test_run_once_logs_run_level_models_and_per_clip_audio_s_cost_and_spans(monk
     assert on_disk["per_clip"]["call_002.ogg"]["cost_usd"] == pytest.approx(
         2.0 / 60.0 * effective_rate
     )
+
+
+def test_run_once_nests_pricing_metadata_per_exp4_convention(monkeypatch, tmp_path):
+    """Pricing metadata must be nested under 'pricing' object with 'source' key,
+    not flat top-level keys, so Task 9's doc generator parses all experiment
+    logs uniformly."""
+    durations_s = {"call_001.ogg": 2.0, "call_002.ogg": 2.0, "call_003.ogg": 1.0}
+    _patch_run_once_collaborators(monkeypatch, tmp_path, durations_s)
+
+    payload = exp5.run_once(1)
+
+    # Pricing must be nested
+    assert "pricing" in payload
+    assert isinstance(payload["pricing"], dict)
+    assert payload["pricing"]["rate_per_min"] == exp5.DG_RATE_PER_MIN
+    assert payload["pricing"]["diarize_addon_per_min"] == exp5.DG_DIARIZE_ADDON_PER_MIN
+    assert payload["pricing"]["source"] == exp5.PRICING_SOURCE
+
+    # Flat keys must NOT exist at top level
+    assert "rate_per_min" not in payload
+    assert "diarize_addon_per_min" not in payload
+    assert "pricing_source" not in payload

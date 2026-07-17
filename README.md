@@ -210,6 +210,10 @@ before any push.
   debatable; both are plausible, and no further prompt iteration is planned
   per the project's controller adjudication.
 
+## Experiments
+
+See also: [Budget–accuracy study](docs/experiments/2026-07-17-budget-accuracy-study.md) — measured evidence for what a higher per-minute budget buys (five spending levers tested against the $0.003/audio-min ceiling).
+
 ## Security & data handling
 
 `data/` and `.env` are gitignored from the first commit. Audio goes to

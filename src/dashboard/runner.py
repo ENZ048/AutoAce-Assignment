@@ -128,7 +128,11 @@ def dispatch_once(db, db_path: Path, jobs_dir: Path, stub: bool) -> bool:
         if proc is None:  # running row without a handle → predates a restart, or an adopted orphan
             if _pid_alive(job["worker_pid"]):
                 return False  # adopted orphan still working — treat as busy, start nothing
-            store.set_status(db, job["id"], "interrupted", error="interrupted by server restart")
+            # sweep_orphans already resolves every dead-pid 'running' row it finds at
+            # startup, so by the time dispatch_once observes a handle-less 'running' row
+            # with a dead pid, it can only be an adopted orphan whose worker has since
+            # died mid-tick — not a restart. Distinct message from sweep_orphans'.
+            store.set_status(db, job["id"], "interrupted", error="worker process died unexpectedly")
             continue
         if proc.is_alive():
             return False  # a job is genuinely running — nothing else may start
@@ -138,24 +142,37 @@ def dispatch_once(db, db_path: Path, jobs_dir: Path, stub: bool) -> bool:
                 db, job["id"], "failed", error=f"worker process died (exit code {proc.exitcode})"
             )
     queued = [j for j in store.list_jobs(db) if j["status"] == "queued"]
-    if not queued:
-        return False
-    job = queued[-1]  # list_jobs is newest-first → last is the oldest queued
-    job_dir = jobs_dir / job["id"]
-    batch_root = (job_dir / "batch_root.txt").read_text(encoding="utf-8").strip()
-    proc = _ctx.Process(
-        target=worker_main,
-        kwargs=dict(
-            job_id=job["id"],
-            db_path=str(db_path),
-            batch_root=batch_root,
-            out_dir=str(job_dir / "out"),
-            stub=stub,
-        ),
-        daemon=True,
-    )
-    store.set_status(db, job["id"], "running")
-    proc.start()
-    _processes[job["id"]] = proc
-    store.set_worker_pid(db, job["id"], proc.pid)
-    return True
+    # list_jobs is newest-first, so iterate in reverse (oldest first). A queued job
+    # whose batch_root.txt is missing/unreadable must not wedge the whole queue: mark
+    # THAT job failed and move on to the next queued job in the same tick, instead of
+    # letting the read raise out of dispatch_once (which would re-raise on every
+    # subsequent tick forever, since the same oldest-queued job is picked each time).
+    for job in reversed(queued):
+        job_dir = jobs_dir / job["id"]
+        try:
+            batch_root = (job_dir / "batch_root.txt").read_text(encoding="utf-8").strip()
+        except OSError as e:
+            store.set_status(
+                db,
+                job["id"],
+                "failed",
+                error=f"could not read batch_root.txt: {type(e).__name__}: {e}",
+            )
+            continue
+        proc = _ctx.Process(
+            target=worker_main,
+            kwargs=dict(
+                job_id=job["id"],
+                db_path=str(db_path),
+                batch_root=batch_root,
+                out_dir=str(job_dir / "out"),
+                stub=stub,
+            ),
+            daemon=True,
+        )
+        store.set_status(db, job["id"], "running")
+        proc.start()
+        _processes[job["id"]] = proc
+        store.set_worker_pid(db, job["id"], proc.pid)
+        return True
+    return False

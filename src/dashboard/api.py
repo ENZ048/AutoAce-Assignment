@@ -213,7 +213,7 @@ def job_results(job_id: str, request: Request, user: str = Depends(require_auth)
     path = _out_path(job, request, job_id, "results.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise HTTPException(
             500, "The results file for this batch is unreadable; re-run the batch."
         ) from e

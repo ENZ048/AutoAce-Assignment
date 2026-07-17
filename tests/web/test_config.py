@@ -20,6 +20,26 @@ def test_settings_load_from_env(monkeypatch, tmp_path):
     assert str(s.data_dir) == str(tmp_path)
 
 
+def test_data_dir_resolved_to_absolute_from_relative_env(monkeypatch, tmp_path):
+    _set_required(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DASHBOARD_DATA_DIR", "relative_data")
+    clear_settings_cache()
+    s = get_dashboard_settings()
+    assert s.data_dir.is_absolute()
+    assert s.data_dir == (tmp_path / "relative_data").resolve()
+
+
+def test_default_data_dir_resolved_relative_to_cwd_at_load_time(monkeypatch, tmp_path):
+    _set_required(monkeypatch)
+    monkeypatch.delenv("DASHBOARD_DATA_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+    clear_settings_cache()
+    s = get_dashboard_settings()
+    assert s.data_dir.is_absolute()
+    assert s.data_dir == (tmp_path / "data").resolve()
+
+
 def test_missing_required_key_fails_fast(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DASHBOARD_ADMIN_USER", raising=False)

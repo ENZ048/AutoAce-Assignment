@@ -49,12 +49,28 @@ def create_app() -> FastAPI:
     app.state.jobs_dir = settings.data_dir / "jobs"
     app.include_router(api.router)
 
+    # All assets are self-hosted by the built Vite SPA (including the @fontsource font),
+    # axios talks XHR/fetch to the same origin only, and downloads use blob: object URLs
+    # created client-side via URL.createObjectURL — none of that needs any external host.
+    _CSP = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'"
+    )
+
     @app.middleware("http")
     async def _security_headers(request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = _CSP
         return response
 
     from pathlib import Path

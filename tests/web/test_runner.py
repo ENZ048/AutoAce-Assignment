@@ -137,8 +137,41 @@ def test_dead_pid_running_row_is_interrupted_and_queue_resumes(tmp_path, monkeyp
     (tmp_path / "waiting" / "batch_root.txt").write_text(str(tmp_path / "waiting"))
     store.set_status(db, "waiting", "queued")
     assert runner.dispatch_once(db, tmp_path / "t.db", tmp_path, stub=True) is True
-    assert store.get_job(db, "stale")["status"] == "interrupted"
+    stale = store.get_job(db, "stale")
+    assert stale["status"] == "interrupted"
+    # Distinct from sweep_orphans' restart message: this row had no process handle in
+    # THIS server process and a dead pid discovered mid-tick, which (post-startup-sweep)
+    # only happens to an adopted worker that has since died — not a server restart.
+    assert stale["error"] == "worker process died unexpectedly"
     assert store.get_job(db, "waiting")["status"] == "running"
+    runner._processes.clear()
+    db.close()
+
+
+def test_wedge_guard_missing_batch_root_fails_job_and_queue_continues(tmp_path, monkeypatch):
+    """A queued job whose batch_root.txt is missing/unreadable must not permanently
+    stall the dispatcher: it gets marked failed and the next queued job still starts,
+    in the same dispatch_once tick."""
+
+    class FakeCtx:
+        Process = staticmethod(lambda **kw: _FakeProc())
+
+    monkeypatch.setattr(runner, "_ctx", FakeCtx())
+    runner._processes.clear()
+    db = store.connect(tmp_path / "t.db")
+    store.create_job(db, "wedged", "a.zip")
+    (tmp_path / "wedged").mkdir()  # batch_root.txt deliberately absent
+    store.set_status(db, "wedged", "queued")
+    time.sleep(1.1)  # created_at has second resolution; keep ordering unambiguous
+    store.create_job(db, "healthy", "b.zip")
+    (tmp_path / "healthy").mkdir()
+    (tmp_path / "healthy" / "batch_root.txt").write_text(str(tmp_path / "healthy"))
+    store.set_status(db, "healthy", "queued")
+    assert runner.dispatch_once(db, tmp_path / "t.db", tmp_path, stub=True) is True
+    wedged = store.get_job(db, "wedged")
+    assert wedged["status"] == "failed"
+    assert wedged["error"]
+    assert store.get_job(db, "healthy")["status"] == "running"
     runner._processes.clear()
     db.close()
 

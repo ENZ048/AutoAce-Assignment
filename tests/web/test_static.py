@@ -31,3 +31,14 @@ def test_security_headers_on_every_response(client):
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["x-frame-options"] == "DENY"
     assert r.headers["referrer-policy"] == "no-referrer"
+
+
+def test_csp_header_present_and_strict(client, auth_header):
+    r = client.get("/api/jobs", headers=auth_header)
+    csp = r.headers["content-security-policy"]
+    assert "default-src 'self'" in csp
+    assert "object-src 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "script-src 'self'" in csp
+    # no external hosts anywhere in the policy
+    assert "http://" not in csp and "https://" not in csp

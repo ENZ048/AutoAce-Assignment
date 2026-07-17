@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,14 @@ class DashboardSettings(BaseSettings):
     max_upload_mb: int = 1024
     stub_analyze: bool = False  # dev/test only: canned analyze, no models/keys
     data_dir: Path = Path("data")
+
+    @field_validator("data_dir")
+    @classmethod
+    def _resolve_data_dir(cls, v: Path) -> Path:
+        # Resolved once, at settings-load time, against the CWD then in effect —
+        # otherwise a relative default silently relocates the DB/jobs dir/
+        # batch_root.txt contents whenever the process's working directory changes.
+        return v.resolve()
 
 
 _cached: DashboardSettings | None = None

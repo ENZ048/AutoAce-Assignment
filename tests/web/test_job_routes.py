@@ -145,3 +145,12 @@ def test_malformed_results_json_returns_clean_500(client, auth_header, app_env, 
     r = client.get(f"/api/jobs/{job['id']}/results", headers=auth_header)
     assert r.status_code == 500
     assert "re-run" in r.json()["detail"]
+
+
+def test_corrupt_non_utf8_results_json_returns_clean_500(client, auth_header, app_env, tmp_path):
+    job = _job_with_artifacts(client, auth_header, app_env, tmp_path)
+    out = app_env / "data" / "jobs" / job["id"] / "out"
+    (out / "results.json").write_bytes(b"\xff\xfe\x00\x01not-utf8")
+    r = client.get(f"/api/jobs/{job['id']}/results", headers=auth_header)
+    assert r.status_code == 500
+    assert "re-run" in r.json()["detail"]

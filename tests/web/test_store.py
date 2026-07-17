@@ -75,3 +75,10 @@ def test_two_connections_see_each_other(tmp_path):
     store.update_progress(b, "j1", done=1, current_file="x.wav")
     assert store.get_job(a, "j1")["done"] == 1
     a.close(); b.close()
+
+
+def test_finish_on_deleted_job_is_a_noop(db):
+    store.create_job(db, "j1", "b.zip")
+    store.delete_job(db, "j1")
+    store.finish(db, "j1", results_count=1, errors_count=0, extra_warnings=["w"])  # must not raise
+    assert store.get_job(db, "j1") is None

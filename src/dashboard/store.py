@@ -98,6 +98,8 @@ def finish(
     extra_warnings: list[str],
 ) -> None:
     row = db.execute("SELECT warnings FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if row is None:  # job deleted while the worker was still running — nothing to finish
+        return
     merged = json.loads(row["warnings"]) + list(extra_warnings)
     db.execute(
         "UPDATE jobs SET status = 'completed', finished_at = ?, results_count = ?, "

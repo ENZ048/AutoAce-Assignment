@@ -451,3 +451,5 @@ Tone bake-off (3 real labeled calls, `--arms gemini dimensional transcript`,
   across repeated runs, not a code or calibration change — call out both
   figures here rather than silently picking one, per the project's disclosure
   norm.
+
+- 2026-07-17 — generalized the agent framing in both tone prompts (removed the hardcoded name "Erica"): the hidden test set's agent name is unknown, and a sample-specific name is exactly the kind of overfit the brief's generalization clause warns about. Verified no anchor regression after the change (001 upset ✓ / 003 satisfied ✓ / 002 unchanged adjudicated xfail). Historical experiment modules (eval/experiments/) keep their frozen prompts — their logged results predate this change.

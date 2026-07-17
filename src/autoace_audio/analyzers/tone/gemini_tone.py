@@ -40,7 +40,7 @@ GEMINI_RESPONSE_SCHEMA = {
 
 def build_prompt(duration_s: float, snr_db: float | None, speech_ratio: float) -> str:
     snr_line = f"{snr_db:.1f} dB" if snr_db is not None else "unmeasurable"
-    return f"""You are analyzing ONE recorded phone call ({duration_s:.0f}s) between an AI voice agent (she introduces herself, e.g. "Erica from <dealership>") and a human CUSTOMER.
+    return f"""You are analyzing ONE recorded phone call ({duration_s:.0f}s) between an automated agent (an AI voice assistant or business representative — it typically introduces itself by name at the start) and a human CUSTOMER.
 
 Classify the CUSTOMER's emotional state only — the AI agent always sounds calm; ignore its tone entirely.
 

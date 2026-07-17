@@ -52,7 +52,7 @@ def classify(samples: np.ndarray, sr: int, vad: VadMap) -> ToneResult:
             {
                 "role": "user",
                 "content": (
-                    "Call transcript between an AI agent (Erica) and a CUSTOMER. Classify the "
+                    "Call transcript between an automated agent and a CUSTOMER. Classify the "
                     'CUSTOMER\'s emotion.\nReturn JSON {"emotional_tone": one of '
                     '[neutral,satisfied,frustrated,upset,distressed], "emotional_intensity": '
                     'one of [low,medium,high], "tone_confidence": 0..1}.\n'

@@ -113,7 +113,7 @@ export default function JobPage() {
 
 function Shell({ children }) {
   return (
-    <main className="mx-auto max-w-screen-2xl px-6 py-8">
+    <main className="mx-auto max-w-7xl px-6 py-8">
       <Link to="/" className="text-sm text-accent">← All batches</Link>
       <div className="mt-4">{children}</div>
     </main>

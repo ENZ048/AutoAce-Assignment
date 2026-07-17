@@ -2,10 +2,6 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { downloadArtifact, getErrors, getResults } from '../api'
 
-const FIELDS = ['emotional_tone', 'emotional_intensity', 'background_noise_present',
-  'background_noise_type', 'background_noise_severity', 'audio_quality',
-  'speaker_overlap_present', 'long_silence_present', 'confidence']
-
 const ENUM_CHIP = {
   neutral: 'bg-gray-100 text-gray-700', satisfied: 'bg-green-100 text-green-700',
   frustrated: 'bg-amber-100 text-amber-700', upset: 'bg-red-100 text-red-700',
@@ -15,15 +11,73 @@ const ENUM_CHIP = {
   slightly_impaired: 'bg-amber-100 text-amber-700', severely_impaired: 'bg-red-100 text-red-700',
 }
 
-function Cell({ value }) {
-  if (typeof value === 'boolean') return <span>{value ? '✓' : '—'}</span>
-  if (typeof value === 'number') return <span className="font-mono">{value.toFixed(2)}</span>
-  if (value === '') return <span className="text-gray-300">—</span>
-  const chip = ENUM_CHIP[value]
-  return chip
-    ? <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${chip}`}>{value}</span>
-    : <span className="font-mono text-xs">{value}</span>
+function Chip({ value }) {
+  const cls = ENUM_CHIP[value] ?? 'bg-gray-100 text-gray-700'
+  return (
+    <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+      {String(value).replaceAll('_', ' ')}
+    </span>
+  )
 }
+
+const Muted = ({ children }) => <span className="text-xs text-gray-300">{children}</span>
+
+// The 9-field schema, grouped for reading: tone+intensity together, the three
+// noise fields as one story, the two boolean flags as pills. Downloads keep
+// the flat per-field schema untouched.
+function ToneCell({ r }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Chip value={r.emotional_tone} />
+      <span className="text-[11px] uppercase tracking-wide text-gray-400">{r.emotional_intensity}</span>
+    </div>
+  )
+}
+
+function NoiseCell({ r }) {
+  if (!r.background_noise_present) return <Muted>none detected</Muted>
+  return (
+    <div className="flex items-center gap-2">
+      <span className="font-mono text-xs text-ink">{r.background_noise_type || 'unidentified'}</span>
+      <Chip value={r.background_noise_severity} />
+    </div>
+  )
+}
+
+function FlagsCell({ r }) {
+  const flags = [
+    r.speaker_overlap_present && 'overlap',
+    r.long_silence_present && 'long silence',
+  ].filter(Boolean)
+  if (!flags.length) return <Muted>none</Muted>
+  return (
+    <div className="flex flex-wrap gap-1">
+      {flags.map((f) => (
+        <span key={f} className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{f}</span>
+      ))}
+    </div>
+  )
+}
+
+function ConfidenceCell({ value }) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <span className="h-1 w-12 overflow-hidden rounded-full bg-gray-100">
+        <span className="block h-full rounded-full bg-accent" style={{ width: `${Math.round(value * 100)}%` }} />
+      </span>
+      <span className="font-mono text-xs text-ink">{value.toFixed(2)}</span>
+    </div>
+  )
+}
+
+const COLUMNS = [
+  { label: 'file', cell: (r) => <span className="whitespace-nowrap font-mono text-xs text-ink">{r.name}</span> },
+  { label: 'tone', cell: (r) => <ToneCell r={r} /> },
+  { label: 'background noise', cell: (r) => <NoiseCell r={r} /> },
+  { label: 'audio quality', cell: (r) => <Chip value={r.audio_quality} /> },
+  { label: 'flags', cell: (r) => <FlagsCell r={r} /> },
+  { label: 'confidence', right: true, cell: (r) => <ConfidenceCell value={r.confidence} /> },
+]
 
 export default function ResultsSection({ job }) {
   const [rows, setRows] = useState([])
@@ -100,17 +154,22 @@ export default function ResultsSection({ job }) {
 
       <div className="max-h-[32rem] overflow-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 bg-white text-xs uppercase tracking-wide shadow-sm">
-            <tr>
-              <th className="whitespace-nowrap px-3 py-2">name</th>
-              {FIELDS.map((f) => <th key={f} className="whitespace-nowrap px-3 py-2">{f.replaceAll('_', ' ')}</th>)}
+          <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
+            <tr className="border-b border-gray-200">
+              {COLUMNS.map((c) => (
+                <th key={c.label}
+                  className={`whitespace-nowrap px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 ${c.right ? 'text-right' : ''}`}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {shown.map((r) => (
-              <tr key={r.name} className="border-t border-gray-100">
-                <td className="px-3 py-2 font-mono text-xs text-ink">{r.name}</td>
-                {FIELDS.map((f) => <td key={f} className="px-3 py-2"><Cell value={r[f]} /></td>)}
+              <tr key={r.name} className="border-t border-gray-100 transition-colors first:border-t-0 hover:bg-wash/60">
+                {COLUMNS.map((c) => (
+                  <td key={c.label} className={`px-4 py-3 ${c.right ? 'text-right' : ''}`}>{c.cell(r)}</td>
+                ))}
               </tr>
             ))}
           </tbody>

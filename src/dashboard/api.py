@@ -130,3 +130,25 @@ def create_job_route(
 def _discard(db, job_id: str, job_dir: Path) -> None:
     store.delete_job(db, job_id)
     shutil.rmtree(job_dir, ignore_errors=True)
+
+
+@router.get("/jobs/{job_id}")
+def get_job_route(job_id: str, request: Request, user: str = Depends(require_auth)):
+    job = store.get_job(request.app.state.db, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    files_path = request.app.state.jobs_dir / job_id / "files.json"
+    job["files"] = json.loads(files_path.read_text(encoding="utf-8")) if files_path.exists() else []
+    return job
+
+
+@router.post("/jobs/{job_id}/start")
+def start_job(job_id: str, request: Request, user: str = Depends(require_auth)):
+    db = request.app.state.db
+    job = store.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    if job["status"] != "awaiting_confirmation":
+        raise HTTPException(409, f"Job is {job['status']}; only a validated batch can start.")
+    store.set_status(db, job_id, "queued")
+    return store.get_job(db, job_id)

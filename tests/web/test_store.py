@@ -91,3 +91,18 @@ def test_finish_on_deleted_job_is_a_noop(db):
     store.delete_job(db, "j1")
     store.finish(db, "j1", results_count=1, errors_count=0, extra_warnings=["w"])  # must not raise
     assert store.get_job(db, "j1") is None
+
+
+def test_requeue_resets_run_state(db):
+    store.create_job(db, "j1", "b.zip")
+    store.set_validation(db, "j1", total=2, warnings=["w"])
+    store.set_status(db, "j1", "running")
+    store.update_progress(db, "j1", done=2, current_file="x.wav")
+    store.set_status(db, "j1", "failed", error="boom")
+    store.requeue(db, "j1")
+    job = store.get_job(db, "j1")
+    assert job["status"] == "queued"
+    assert job["done"] == 0 and job["current_file"] is None
+    assert job["error"] is None and job["finished_at"] is None and job["started_at"] is None
+    assert job["results_count"] is None and job["errors_count"] is None
+    assert job["total"] == 2 and job["warnings"] == ["w"]  # validation facts survive

@@ -1,5 +1,6 @@
 """All /api routes."""
 
+import csv
 import json
 import shutil
 import time
@@ -8,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from autoace_audio.batch import validate_batch
@@ -152,3 +154,70 @@ def start_job(job_id: str, request: Request, user: str = Depends(require_auth)):
         raise HTTPException(409, f"Job is {job['status']}; only a validated batch can start.")
     store.set_status(db, job_id, "queued")
     return store.get_job(db, job_id)
+
+
+_ARTIFACTS = {
+    "results.csv": "text/csv",
+    "results.json": "application/json",
+    "errors.csv": "text/csv",
+}
+
+
+def _job_or_404(db, job_id: str) -> dict:
+    job = store.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+def _out_path(request: Request, job_id: str, artifact: str) -> Path:
+    path = request.app.state.jobs_dir / job_id / "out" / artifact
+    if not path.exists():
+        raise HTTPException(409, "Not available yet — the batch has not finished processing.")
+    return path
+
+
+@router.post("/jobs/{job_id}/rerun")
+def rerun_job(job_id: str, request: Request, user: str = Depends(require_auth)):
+    db = request.app.state.db
+    job = _job_or_404(db, job_id)
+    if job["status"] not in ("failed", "interrupted"):
+        raise HTTPException(409, f"Job is {job['status']}; only failed or interrupted jobs re-run.")
+    store.requeue(db, job_id)
+    return store.get_job(db, job_id)
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+def delete_job_route(job_id: str, request: Request, user: str = Depends(require_auth)):
+    db = request.app.state.db
+    job = _job_or_404(db, job_id)
+    if job["status"] in ("queued", "running"):
+        raise HTTPException(409, "Job is active; wait for it to finish before deleting.")
+    store.delete_job(db, job_id)
+    shutil.rmtree(request.app.state.jobs_dir / job_id, ignore_errors=True)
+
+
+@router.get("/jobs/{job_id}/results")
+def job_results(job_id: str, request: Request, user: str = Depends(require_auth)):
+    _job_or_404(request.app.state.db, job_id)
+    data = json.loads(_out_path(request, job_id, "results.json").read_text(encoding="utf-8"))
+    return [{"name": name, **fields} for name, fields in data.items()]
+
+
+@router.get("/jobs/{job_id}/errors")
+def job_errors(job_id: str, request: Request, user: str = Depends(require_auth)):
+    _job_or_404(request.app.state.db, job_id)
+    with open(_out_path(request, job_id, "errors.csv"), newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+@router.get("/jobs/{job_id}/download/{artifact}")
+def download_artifact(
+    job_id: str, artifact: str, request: Request, user: str = Depends(require_auth)
+):
+    if artifact not in _ARTIFACTS:
+        raise HTTPException(404, "Unknown artifact")
+    _job_or_404(request.app.state.db, job_id)
+    return FileResponse(
+        _out_path(request, job_id, artifact), media_type=_ARTIFACTS[artifact], filename=artifact
+    )

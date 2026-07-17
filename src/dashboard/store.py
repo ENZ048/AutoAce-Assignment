@@ -125,3 +125,12 @@ def set_worker_pid(db: sqlite3.Connection, job_id: str, pid: int) -> None:
 
 def delete_job(db: sqlite3.Connection, job_id: str) -> None:
     db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+
+
+def requeue(db: sqlite3.Connection, job_id: str) -> None:
+    db.execute(
+        "UPDATE jobs SET status = 'queued', done = 0, current_file = NULL, error = NULL, "
+        "started_at = NULL, finished_at = NULL, results_count = NULL, errors_count = NULL "
+        "WHERE id = ?",
+        (job_id,),
+    )

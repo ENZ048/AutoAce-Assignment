@@ -1,13 +1,20 @@
 """All /api routes."""
 
+import json
+import shutil
 import time
+import uuid
+import zipfile
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
+from autoace_audio.batch import validate_batch
 from dashboard import store
 from dashboard.auth import create_token, require_auth, verify_login
 from dashboard.config import get_dashboard_settings
+from dashboard.zipsafe import UnsafeZipError, extract_zip
 
 router = APIRouter(prefix="/api")
 
@@ -29,3 +36,73 @@ def login(body: LoginBody):
 @router.get("/jobs")
 def list_jobs(request: Request, user: str = Depends(require_auth)):
     return store.list_jobs(request.app.state.db)
+
+
+class _TooLarge(Exception):
+    pass
+
+
+def _stream_to(dst: Path, upload: UploadFile, used: list[int], cap_bytes: int) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with open(dst, "wb") as out:
+        while chunk := upload.file.read(1024 * 1024):
+            used[0] += len(chunk)
+            if used[0] > cap_bytes:
+                raise _TooLarge()
+            out.write(chunk)
+
+
+@router.post("/jobs", status_code=201)
+def create_job_route(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    user: str = Depends(require_auth),
+):
+    settings = get_dashboard_settings()
+    db = request.app.state.db
+    cap_bytes = settings.max_upload_mb * 1024 * 1024
+    is_zip = len(files) == 1 and (files[0].filename or "").lower().endswith(".zip")
+    if len(files) == 1 and not is_zip:
+        raise HTTPException(
+            400,
+            "Upload one ZIP archive, or select a folder (audio files + one CSV manifest).",
+        )
+
+    job_id = uuid.uuid4().hex
+    job_dir: Path = request.app.state.jobs_dir / job_id
+    extracted = job_dir / "extracted"
+    original_name = files[0].filename if is_zip else f"folder upload ({len(files)} files)"
+    store.create_job(db, job_id, original_name)
+    used = [0]
+    try:
+        if is_zip:
+            upload_path = job_dir / "upload" / Path(files[0].filename).name
+            _stream_to(upload_path, files[0], used, cap_bytes)
+            root = extract_zip(upload_path, extracted)
+        else:
+            extracted.mkdir(parents=True, exist_ok=True)
+            for f in files:
+                # brief: audio files at the batch root — flatten any folder paths
+                _stream_to(extracted / Path(f.filename).name, f, used, cap_bytes)
+            root = extracted
+        (job_dir / "batch_root.txt").write_text(str(root), encoding="utf-8")
+        file_list, warnings = validate_batch(root)
+        (job_dir / "files.json").write_text(
+            json.dumps([p.name for p in file_list]), encoding="utf-8"
+        )
+        store.set_validation(db, job_id, total=len(file_list), warnings=warnings)
+        return store.get_job(db, job_id)
+    except _TooLarge:
+        _discard(db, job_id, job_dir)
+        raise HTTPException(413, f"Upload exceeds the {settings.max_upload_mb} MB limit.") from None
+    except UnsafeZipError as e:
+        _discard(db, job_id, job_dir)
+        raise HTTPException(400, f"Rejected ZIP: {e}") from None
+    except zipfile.BadZipFile:
+        _discard(db, job_id, job_dir)
+        raise HTTPException(400, "The uploaded file is not a valid ZIP archive.") from None
+
+
+def _discard(db, job_id: str, job_dir: Path) -> None:
+    store.delete_job(db, job_id)
+    shutil.rmtree(job_dir, ignore_errors=True)

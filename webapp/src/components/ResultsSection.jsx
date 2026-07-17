@@ -131,22 +131,25 @@ export default function ResultsSection({ job }) {
       </div>
 
       <div className="max-h-[32rem] overflow-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-left text-sm">
+        {/* border-separate (not collapse): collapsed borders belong to the table,
+            so they never paint on a sticky thead — cell-owned borders do. The
+            container draws the outer frame; cells draw right+bottom lines. */}
+        <table className="w-full border-separate border-spacing-0 text-sm">
           <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
             <tr>
               {COLUMNS.map((c) => (
                 <th key={c.label}
-                  className="whitespace-nowrap border border-gray-200 px-4 py-3 text-center align-middle text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600">
+                  className="whitespace-nowrap border-b border-r border-gray-200 px-4 py-3 text-center align-middle text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-600 last:border-r-0">
                   {c.label}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="[&>tr:last-child>td]:border-b-0">
             {shown.map((r) => (
               <tr key={r.name} className="transition-colors hover:bg-wash/60">
                 {COLUMNS.map((c) => (
-                  <td key={c.label} className="border border-gray-200 px-4 py-3 text-center align-middle">{c.cell(r)}</td>
+                  <td key={c.label} className="border-b border-r border-gray-200 px-4 py-3 text-center align-middle last:border-r-0">{c.cell(r)}</td>
                 ))}
               </tr>
             ))}

@@ -32,7 +32,7 @@ export const createJob = (formData, onUploadProgress) =>
   client.post('/api/jobs', formData, { onUploadProgress }).then((r) => r.data)
 export const startJob = (id) => client.post(`/api/jobs/${id}/start`).then((r) => r.data)
 export const rerunJob = (id) => client.post(`/api/jobs/${id}/rerun`).then((r) => r.data)
-export const deleteJob = (id) => client.delete(`/api/jobs/${id}`)
+export const deleteJob = (id) => client.delete(`/api/jobs/${id}`).then((r) => r.data)
 export const getResults = (id) => client.get(`/api/jobs/${id}/results`).then((r) => r.data)
 export const getErrors = (id) => client.get(`/api/jobs/${id}/errors`).then((r) => r.data)
 
@@ -42,6 +42,8 @@ export const downloadArtifact = async (id, name) => {
   const a = document.createElement('a')
   a.href = url
   a.download = name
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

@@ -108,3 +108,40 @@ def test_delete_blocked_while_active_then_removes_everything(
     assert client.delete(f"/api/jobs/{job['id']}", headers=auth_header).status_code == 204
     assert client.get(f"/api/jobs/{job['id']}", headers=auth_header).status_code == 404
     assert not (app_env / "data" / "jobs" / job["id"]).exists()
+
+
+def test_reads_gated_on_completed_status(client, auth_header, app_env, tmp_path):
+    job = _job_with_artifacts(client, auth_header, app_env, tmp_path)  # completed + artifacts
+    db = store.connect(app_env / "data" / "dashboard.db")
+    store.set_status(db, job["id"], "running")
+    db.close()
+    # artifacts exist on disk, but status is not completed -> all three reads 409
+    assert client.get(f"/api/jobs/{job['id']}/results", headers=auth_header).status_code == 409
+    assert client.get(f"/api/jobs/{job['id']}/errors", headers=auth_header).status_code == 409
+    assert (
+        client.get(f"/api/jobs/{job['id']}/download/results.csv", headers=auth_header).status_code
+        == 409
+    )
+    # (dispatcher may flip this handle-less 'running' row to 'interrupted' within a tick —
+    # also not 'completed', so assertions stay stable)
+
+
+def test_rerun_clears_stale_artifacts(client, auth_header, app_env, tmp_path):
+    job = _job_with_artifacts(client, auth_header, app_env, tmp_path)
+    out_dir = app_env / "data" / "jobs" / job["id"] / "out"
+    assert out_dir.exists()
+    db = store.connect(app_env / "data" / "dashboard.db")
+    store.set_status(db, job["id"], "interrupted", error="interrupted by server restart")
+    db.close()
+    r = client.post(f"/api/jobs/{job['id']}/rerun", headers=auth_header)
+    assert r.status_code == 200
+    assert not out_dir.exists()
+
+
+def test_malformed_results_json_returns_clean_500(client, auth_header, app_env, tmp_path):
+    job = _job_with_artifacts(client, auth_header, app_env, tmp_path)
+    out = app_env / "data" / "jobs" / job["id"] / "out"
+    (out / "results.json").write_text("{truncated", encoding="utf-8")
+    r = client.get(f"/api/jobs/{job['id']}/results", headers=auth_header)
+    assert r.status_code == 500
+    assert "re-run" in r.json()["detail"]

@@ -170,7 +170,14 @@ def _job_or_404(db, job_id: str) -> dict:
     return job
 
 
-def _out_path(request: Request, job_id: str, artifact: str) -> Path:
+def _out_path(job: dict, request: Request, job_id: str, artifact: str) -> Path:
+    # Status gate first: after a rerun, stale artifacts from a prior attempt can still
+    # sit on disk while the job is queued/running again — gate on the job's own status
+    # before ever looking at the filesystem, so a "running" job card can't serve torn
+    # or superseded data. Existence stays as the second layer for the completed case
+    # where out/ hasn't been written yet (shouldn't happen, but cheap to keep).
+    if job["status"] != "completed":
+        raise HTTPException(409, "Results are available once the batch has completed.")
     path = request.app.state.jobs_dir / job_id / "out" / artifact
     if not path.exists():
         raise HTTPException(409, "Not available yet — the batch has not finished processing.")
@@ -183,6 +190,9 @@ def rerun_job(job_id: str, request: Request, user: str = Depends(require_auth)):
     job = _job_or_404(db, job_id)
     if job["status"] not in ("failed", "interrupted"):
         raise HTTPException(409, f"Job is {job['status']}; only failed or interrupted jobs re-run.")
+    # Clear the previous attempt's artifacts before requeueing — otherwise they remain
+    # servable through the read routes while the rerun is queued/running.
+    shutil.rmtree(request.app.state.jobs_dir / job_id / "out", ignore_errors=True)
     store.requeue(db, job_id)
     return store.get_job(db, job_id)
 
@@ -199,15 +209,21 @@ def delete_job_route(job_id: str, request: Request, user: str = Depends(require_
 
 @router.get("/jobs/{job_id}/results")
 def job_results(job_id: str, request: Request, user: str = Depends(require_auth)):
-    _job_or_404(request.app.state.db, job_id)
-    data = json.loads(_out_path(request, job_id, "results.json").read_text(encoding="utf-8"))
+    job = _job_or_404(request.app.state.db, job_id)
+    path = _out_path(job, request, job_id, "results.json")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            500, "The results file for this batch is unreadable; re-run the batch."
+        ) from e
     return [{"name": name, **fields} for name, fields in data.items()]
 
 
 @router.get("/jobs/{job_id}/errors")
 def job_errors(job_id: str, request: Request, user: str = Depends(require_auth)):
-    _job_or_404(request.app.state.db, job_id)
-    with open(_out_path(request, job_id, "errors.csv"), newline="", encoding="utf-8") as f:
+    job = _job_or_404(request.app.state.db, job_id)
+    with open(_out_path(job, request, job_id, "errors.csv"), newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
 
@@ -217,7 +233,9 @@ def download_artifact(
 ):
     if artifact not in _ARTIFACTS:
         raise HTTPException(404, "Unknown artifact")
-    _job_or_404(request.app.state.db, job_id)
+    job = _job_or_404(request.app.state.db, job_id)
     return FileResponse(
-        _out_path(request, job_id, artifact), media_type=_ARTIFACTS[artifact], filename=artifact
+        _out_path(job, request, job_id, artifact),
+        media_type=_ARTIFACTS[artifact],
+        filename=artifact,
     )
